@@ -1,42 +1,48 @@
 {
   "expo": {
-    "name": "expo-on-replit",
-    "slug": "expo-on-replit",
+    "name": "Conqr",
+    "slug": "conqr",
+    "scheme": "conqr",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
-    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.aravkrishnan.conqr",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Conqr needs your location to track your movements and claim territories.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Conqr needs your location to track your movements and claim territories even when the app is in the background."
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#000000"
       },
-      "edgeToEdgeEnabled": true
-    },
-    "web": {
-      "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "package": "com.aravkrishnan.conqr",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE"
+      ]
     },
     "plugins": [
-      "expo-router",
+      "expo-web-browser",
       [
-        "expo-splash-screen",
+        "@maplibre/maplibre-react-native",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "RNMapLibreMapboxMapboxGLDownloadToken": "PLACEHOLDER"
         }
-      ]
-    ],
-    "experiments": {
-      "typedRoutes": true
-    }
+      ],
+      "expo-location"
+    ]
   }
 }

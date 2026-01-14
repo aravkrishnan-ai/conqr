@@ -1,0 +1,77 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { GoogleSignInButton } from '@/components/GoogleSignInButton';
+import { MapPin, Globe, Trophy, Activity } from 'lucide-react';
+
+export default function LandingPage() {
+  return (
+    <div className="min-h-screen bg-black text-white selection:bg-cyan-500/30 overflow-hidden relative font-sans">
+      {/* Background Gradients/Grid */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
+      <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent pointer-events-none" />
+
+      {/* Spotlight Effect */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-cyan-500/20 blur-[120px] rounded-full opacity-50 pointer-events-none" />
+
+      {/* Main Content */}
+      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-6 text-center">
+
+        {/* Hero Section */}
+        <div className="mb-12 space-y-6 animate-in fade-in slide-in-from-bottom-5 duration-1000">
+          <div className="mx-auto w-20 h-20 bg-cyan-500/10 rounded-2xl flex items-center justify-center border border-cyan-500/30 mb-8 shadow-[0_0_30px_rgba(6,182,212,0.3)]">
+            <MapPin className="w-10 h-10 text-cyan-400" />
+          </div>
+
+          <h1 className="text-6xl md:text-8xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-b from-white to-white/50 mb-4">
+            CONQR
+          </h1>
+
+          <p className="text-xl md:text-2xl text-zinc-400 max-w-2xl mx-auto font-light">
+            The world is your canvas. <span className="text-cyan-400 font-medium">Run, Ride, Walk</span> to claim territory and dominate the map.
+          </p>
+        </div>
+
+        {/* Auth Section */}
+        <div className="w-full max-w-md space-y-4 mb-20 animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-200">
+          <div className="bg-zinc-900/50 backdrop-blur-xl border border-white/10 p-1 rounded-2xl shadow-2xl">
+            <GoogleSignInButton />
+          </div>
+          <p className="text-xs text-zinc-500 uppercase tracking-widest pt-4">
+            Join the Resistance
+          </p>
+        </div>
+
+        {/* Features Grid - Decorative */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto opacity-70 animate-in fade-in zoom-in duration-1000 delay-500">
+          <FeatureCard
+            icon={<Globe className="w-6 h-6 text-indigo-400" />}
+            title="Global Grid"
+            desc="Every meter matters. The whole world is partitioned."
+          />
+          <FeatureCard
+            icon={<Activity className="w-6 h-6 text-emerald-400" />}
+            title="Real-time Tracking"
+            desc="GPS tracing validates your movement instantly."
+          />
+          <FeatureCard
+            icon={<Trophy className="w-6 h-6 text-amber-400" />}
+            title="Leaderboards"
+            desc="Compete for largest territory area."
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FeatureCard({ icon, title, desc }: { icon: any, title: string, desc: string }) {
+  return (
+    <div className="flex flex-col items-center p-6 rounded-2xl border border-white/5 bg-white/5 backdrop-blur-sm hover:bg-white/10 transition-colors">
+      <div className="mb-3 p-3 bg-black/40 rounded-xl">{icon}</div>
+      <h3 className="font-bold text-lg mb-1">{title}</h3>
+      <p className="text-sm text-zinc-400 leading-relaxed">{desc}</p>
+    </div>
+  )
+}
