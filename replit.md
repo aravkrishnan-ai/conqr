@@ -9,7 +9,7 @@ CONQR is a mobile app (Android/iOS) where users claim real-world territory by ru
 - **Framework**: React Native with Expo SDK 54
 - **Navigation**: React Navigation (native stack)
 - **Backend**: Supabase (auth, database)
-- **Maps**: MapLibre React Native (native), Leaflet (web fallback)
+- **Maps**: Leaflet via WebView (both native and web)
 - **Local Storage**: AsyncStorage (for offline-first data)
 
 ### Key Files Structure
@@ -49,6 +49,11 @@ CONQR is a mobile app (Android/iOS) where users claim real-world territory by ru
 - **Fixed require cycle**: Extracted AuthContext to separate file to prevent App.tsx <-> ProfileSetupScreen.tsx cycle
 - **Added territory persistence**: Territories now save to Supabase and sync across devices
 - **Display total conquered area**: Game screen now shows cumulative conquered territory
+- **Fixed native APK issues**: 
+  - Added react-native-get-random-values polyfill for uuid
+  - Removed unused packages (maplibre-react-native, dexie, react-native-maps)
+  - Fixed AuthService async/await pattern
+  - Territory polygons now render on the map
 
 ## Building APK
 ```bash

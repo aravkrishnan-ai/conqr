@@ -193,17 +193,22 @@ export const AuthService = {
         await db.users.put(profile);
 
         // Try to sync to Supabase in background (don't await)
-        supabase
-            .from('users')
-            .upsert({
-                id: userId,
-                email: userEmail,
-                username: updates.username,
-                bio: updates.bio,
-                avatar_url: updates.avatarUrl || avatarUrl
-            })
-            .then(() => console.log('Profile synced to cloud'))
-            .catch((err: Error) => console.log('Cloud sync failed, will retry later:', err.message));
+        (async () => {
+            try {
+                await supabase
+                    .from('users')
+                    .upsert({
+                        id: userId,
+                        email: userEmail,
+                        username: updates.username,
+                        bio: updates.bio,
+                        avatar_url: updates.avatarUrl || avatarUrl
+                    });
+                console.log('Profile synced to cloud');
+            } catch (err: any) {
+                console.log('Cloud sync failed, will retry later:', err?.message);
+            }
+        })();
 
         return profile;
     },
