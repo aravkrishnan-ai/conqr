@@ -1,6 +1,7 @@
 import { GPSPoint, ActivityType, Territory } from '../lib/types';
 import { getDistance } from 'geolib';
-import { polygon, area, unkinkPolygon, rewind } from '@turf/turf';
+import { polygon, area, unkinkPolygon, rewind, centroid, length, lineString } from '@turf/turf';
+import { v4 as uuidv4 } from 'uuid';
 
 // Constraints
 const SPEED_LIMITS = {
@@ -83,16 +84,25 @@ export const GameEngine = {
             if (polyArea < 10) return null;
 
             const finalCoords = turfPoly.geometry.coordinates[0];
-            const center = { lat: finalCoords[0][1], lng: finalCoords[0][0] };
+            // Calculate proper centroid instead of using first point
+            const centerPoint = centroid(turfPoly);
+            const center = {
+                lat: centerPoint.geometry.coordinates[1],
+                lng: centerPoint.geometry.coordinates[0]
+            };
+
+            // Calculate perimeter from the polygon boundary
+            const perimeterLine = lineString(finalCoords);
+            const perimeterLength = length(perimeterLine, { units: 'meters' });
 
             return {
-                id: Math.random().toString(36).substring(7), // In mobile, we might use a better UUID
+                id: uuidv4(),
                 name: '',
                 ownerId,
                 activityId,
                 claimedAt: Date.now(),
                 area: polyArea,
-                perimeter: 0,
+                perimeter: perimeterLength,
                 center,
                 polygon: finalCoords as [number, number][],
                 history: [{

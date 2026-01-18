@@ -3,11 +3,12 @@
     "name": "Conqr",
     "slug": "conqr",
     "scheme": "conqr",
+    "owner": "aravconqr",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -32,17 +33,36 @@
         "ACCESS_FINE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "conqr",
+              "host": "auth",
+              "pathPrefix": "/callback"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
       ]
     },
     "plugins": [
       "expo-web-browser",
-      [
-        "@maplibre/maplibre-react-native",
-        {
-          "RNMapLibreMapboxMapboxGLDownloadToken": "PLACEHOLDER"
-        }
-      ],
       "expo-location"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "75ecf103-6cba-4b61-b280-0aaf3276695d"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/75ecf103-6cba-4b61-b280-0aaf3276695d"
+    }
   }
 }

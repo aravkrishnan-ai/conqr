@@ -1,12 +1,11 @@
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { makeRedirectUri } from 'expo-auth-session';
+import { Platform, Alert } from 'react-native';
 import { db } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { UserProfile } from '../lib/types';
-
-// Simple random ID generator to avoid uuid/crypto dependency problems in React Native
-const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+import { v4 as uuidv4 } from 'uuid';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -15,23 +14,26 @@ const extractParamsFromUrl = (url: string) => {
     const errorMatch = url.match(/error_description=([^&]+)/);
     const errorCodeMatch = url.match(/error=([^&]+)/);
 
+    // Handle both hash (#) and query (?) parameters
+    let paramString = '';
     if (url.includes('#')) {
-        const hash = url.split('#')[1];
-        hash.split('&').forEach(pair => {
-            const [key, value] = pair.split('=');
-            params[key] = value;
-        });
+        paramString = url.split('#')[1];
     } else if (url.includes('?')) {
-        const query = url.split('?')[1];
-        query.split('&').forEach(pair => {
+        paramString = url.split('?')[1];
+    }
+
+    if (paramString) {
+        paramString.split('&').forEach(pair => {
             const [key, value] = pair.split('=');
-            params[key] = value;
+            if (key && value) {
+                params[key] = decodeURIComponent(value);
+            }
         });
     }
 
     return {
         params,
-        errorCode: errorCodeMatch ? errorCodeMatch[1] : null,
+        errorCode: errorCodeMatch ? decodeURIComponent(errorCodeMatch[1]) : null,
         errorDescription: errorMatch ? decodeURIComponent(errorMatch[1].replace(/\+/g, ' ')) : null,
     };
 };
@@ -66,7 +68,11 @@ export const AuthService = {
     },
 
     async signInWithGoogle() {
-        const redirectUrl = makeRedirectUri();
+        // Create proper redirect URI for the app scheme
+        // Force the scheme-based redirect for native apps
+        const redirectUrl = 'conqr://auth/callback';
+
+        console.log('OAuth redirect URL:', redirectUrl);
 
         const { data, error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
@@ -78,22 +84,68 @@ export const AuthService = {
 
         if (error) {
             console.error('Supabase OAuth Error:', error);
+            Alert.alert('Sign In Error', error.message || 'Failed to start sign in');
             throw error;
         }
 
-        const res = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+        if (!data?.url) {
+            console.error('No OAuth URL returned');
+            Alert.alert('Sign In Error', 'Could not get sign in URL');
+            throw new Error('No OAuth URL returned');
+        }
+
+        console.log('Opening auth URL:', data.url);
+
+        let res;
+        try {
+            res = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+        } catch (browserError: any) {
+            console.error('Browser error:', browserError);
+            Alert.alert('Browser Error', browserError?.message || 'Failed to open browser');
+            throw browserError;
+        }
+
+        console.log('Auth session result:', res.type);
+
+        if (res.type === 'cancel') {
+            console.log('User cancelled sign in');
+            return;
+        }
 
         if (res.type === 'success' && res.url) {
-            const { params, errorCode } = extractParamsFromUrl(res.url);
-            if (errorCode) throw new Error(errorCode);
+            console.log('Auth callback URL:', res.url);
+            const { params, errorCode, errorDescription } = extractParamsFromUrl(res.url);
+
+            console.log('Parsed params:', Object.keys(params));
+
+            if (errorCode) {
+                console.error('OAuth error:', errorCode, errorDescription);
+                Alert.alert('OAuth Error', errorDescription || errorCode);
+                throw new Error(errorDescription || errorCode);
+            }
 
             const { access_token, refresh_token } = params;
+            console.log('Got tokens:', { hasAccess: !!access_token, hasRefresh: !!refresh_token });
+
             if (access_token && refresh_token) {
-                await supabase.auth.setSession({
+                const { error: sessionError } = await supabase.auth.setSession({
                     access_token,
                     refresh_token,
                 });
+
+                if (sessionError) {
+                    console.error('Session error:', sessionError);
+                    Alert.alert('Session Error', sessionError.message || 'Failed to save session');
+                    throw sessionError;
+                }
+
+                console.log('Session set successfully');
+            } else {
+                console.error('Missing tokens in callback URL:', res.url);
+                Alert.alert('Sign In Error', 'Authentication incomplete - please try again');
             }
+        } else if (res.type === 'dismiss') {
+            console.log('Auth window dismissed');
         }
     },
 
@@ -103,7 +155,7 @@ export const AuthService = {
         if (existing) throw new Error('Username taken');
 
         const newUser: UserProfile = {
-            id: generateId(),
+            id: uuidv4(),
             username,
             email,
             createdAt: Date.now(),
@@ -115,54 +167,83 @@ export const AuthService = {
     },
 
     async updateProfile(updates: Partial<UserProfile>) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.user) throw new Error('No user found');
+        // Get user ID from local or generate one
+        let userId: string;
+        let userEmail: string | undefined;
+        let avatarUrl: string | undefined;
 
-        // Upsert to Supabase
-        const { error } = await supabase
-            .from('users')
-            .upsert({
-                id: session.user.id,
-                email: session.user.email,
-                username: updates.username,
-                bio: updates.bio,
-                avatar_url: updates.avatarUrl || session.user.user_metadata.avatar_url
-            });
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            userId = session?.user?.id || uuidv4();
+            userEmail = session?.user?.email;
+            avatarUrl = session?.user?.user_metadata?.avatar_url;
+        } catch {
+            userId = uuidv4();
+        }
 
-        if (error) throw error;
-
-        // Update local cache
-        await db.users.put({
-            id: session.user.id,
-            email: session.user.email,
+        // Save locally FIRST (offline-first)
+        const profile: UserProfile = {
+            id: userId,
+            email: userEmail,
             username: updates.username || '',
             bio: updates.bio || '',
-            avatarUrl: updates.avatarUrl || session.user.user_metadata.avatar_url,
+            avatarUrl: updates.avatarUrl || avatarUrl,
             createdAt: Date.now()
-        });
+        };
+        await db.users.put(profile);
 
-        return { id: session.user.id, ...updates } as UserProfile;
+        // Try to sync to Supabase in background (don't await)
+        supabase
+            .from('users')
+            .upsert({
+                id: userId,
+                email: userEmail,
+                username: updates.username,
+                bio: updates.bio,
+                avatar_url: updates.avatarUrl || avatarUrl
+            })
+            .then(() => console.log('Profile synced to cloud'))
+            .catch((err) => console.log('Cloud sync failed, will retry later:', err));
+
+        return profile;
     },
 
     async getCurrentProfile(): Promise<UserProfile | null> {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.user) return null;
+        // Check local DB FIRST (offline-first)
+        try {
+            const users = await db.users.toArray();
+            if (users.length > 0 && users[0].username) {
+                return users[0];
+            }
+        } catch (err) {
+            console.log('Local DB error:', err);
+        }
 
-        const { data, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
+        // Fallback to Supabase if local is empty
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session?.user) return null;
 
-        if (error || !data) return null;
+            const { data } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', session.user.id)
+                .single();
 
-        return {
-            id: data.id,
-            username: data.username,
-            email: data.email,
-            bio: data.bio,
-            avatarUrl: data.avatar_url,
-            createdAt: new Date(data.created_at).getTime()
-        };
+            if (data) {
+                return {
+                    id: data.id,
+                    username: data.username,
+                    email: data.email,
+                    bio: data.bio,
+                    avatarUrl: data.avatar_url,
+                    createdAt: new Date(data.created_at).getTime()
+                };
+            }
+        } catch (err) {
+            console.log('Supabase profile fetch error:', err);
+        }
+
+        return null;
     }
 };

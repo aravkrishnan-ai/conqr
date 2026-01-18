@@ -1,61 +1,141 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, createContext, useContext } from 'react';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { supabase } from './lib/supabase';
-import { AuthService } from './services/AuthService';
-import LandingScreen from './screens/LandingScreen';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+
 import GameScreen from './screens/GameScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import LandingScreen from './screens/LandingScreen';
 import ProfileSetupScreen from './screens/ProfileSetupScreen';
-import { Session } from '@supabase/supabase-js';
+import { supabase } from './lib/supabase';
+import { AuthService } from './services/AuthService';
 
 const Stack = createNativeStackNavigator();
 
-export default function App() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [onboardingComplete, setOnboardingComplete] = useState(false);
+// Context to allow screens to update auth state
+type AuthContextType = {
+  setHasProfile: (value: boolean) => void;
+  refreshAuthState: () => Promise<void>;
+};
+export const AuthContext = createContext<AuthContextType>({
+  setHasProfile: () => {},
+  refreshAuthState: async () => {},
+});
+export const useAuth = () => useContext(AuthContext);
+
+// Error Boundary to catch crashes
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null; errorInfo: string }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: '' };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('App crashed:', error, errorInfo);
+    this.setState({ errorInfo: errorInfo.componentStack || '' });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={errorStyles.container}>
+          <Text style={errorStyles.title}>App Crashed</Text>
+          <ScrollView style={errorStyles.scroll}>
+            <Text style={errorStyles.errorName}>{this.state.error?.name}</Text>
+            <Text style={errorStyles.errorMessage}>{this.state.error?.message}</Text>
+            <Text style={errorStyles.errorStack}>{this.state.error?.stack}</Text>
+            <Text style={errorStyles.componentStack}>{this.state.errorInfo}</Text>
+          </ScrollView>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const errorStyles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#1a0000', padding: 20, paddingTop: 60 },
+  title: { color: '#ff4444', fontSize: 24, fontWeight: 'bold', marginBottom: 20 },
+  scroll: { flex: 1 },
+  errorName: { color: '#ff8888', fontSize: 18, fontWeight: 'bold', marginBottom: 8 },
+  errorMessage: { color: '#ffaaaa', fontSize: 16, marginBottom: 16 },
+  errorStack: { color: '#888', fontSize: 12, fontFamily: 'monospace', marginBottom: 16 },
+  componentStack: { color: '#666', fontSize: 10, fontFamily: 'monospace' },
+});
+
+function AppNavigator() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [hasProfile, setHasProfile] = useState(false);
+
+  const refreshAuthState = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setIsAuthenticated(true);
+        const profile = await AuthService.getCurrentProfile();
+        setHasProfile(!!profile?.username);
+      } else {
+        setIsAuthenticated(false);
+        setHasProfile(false);
+      }
+    } catch (err) {
+      console.error('Auth check error:', err);
+    }
+  };
 
   useEffect(() => {
-    // Check initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      handleSession(session);
-    });
+    const init = async () => {
+      await refreshAuthState();
+      setIsLoading(false);
+    };
+    init();
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      handleSession(session);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event);
+      if (session) {
+        setIsAuthenticated(true);
+        const profile = await AuthService.getCurrentProfile();
+        setHasProfile(!!profile?.username);
+      } else {
+        setIsAuthenticated(false);
+        setHasProfile(false);
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const handleSession = async (session: Session | null) => {
-    setSession(session);
-    if (session) {
-      // Check if profile is complete
-      try {
-        const profile = await AuthService.getCurrentProfile();
-        setOnboardingComplete(!!profile?.username);
-      } catch (err) {
-        console.error('Check profile error:', err);
-        setOnboardingComplete(false);
-      }
-    }
-    setLoading(false);
-  };
-
-  if (loading) return null;
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#22d3ee" />
+      </View>
+    );
+  }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#000' } }}>
-        {!session ? (
+    <AuthContext.Provider value={{ setHasProfile, refreshAuthState }}>
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: '#000' },
+        }}
+      >
+        {!isAuthenticated ? (
           <Stack.Screen name="Landing" component={LandingScreen} />
-        ) : !onboardingComplete ? (
-          <Stack.Screen name="ProfileSetup">
-            {(props) => <ProfileSetupScreen {...props} onComplete={() => setOnboardingComplete(true)} />}
-          </Stack.Screen>
+        ) : !hasProfile ? (
+          <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
         ) : (
           <>
             <Stack.Screen name="Game" component={GameScreen} />
@@ -63,6 +143,21 @@ export default function App() {
           </>
         )}
       </Stack.Navigator>
-    </NavigationContainer>
+    </AuthContext.Provider>
+  );
+}
+
+export default function App() {
+  console.log('APP STARTING');
+
+  return (
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <StatusBar style="light" />
+        <NavigationContainer>
+          <AppNavigator />
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }

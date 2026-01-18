@@ -14,8 +14,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { User, AlignLeft, Check } from 'lucide-react-native';
 import { AuthService } from '../services/AuthService';
+import { useAuth } from '../App';
 
-export default function ProfileSetupScreen({ onComplete }: { onComplete: () => void }) {
+export default function ProfileSetupScreen() {
+    const { setHasProfile } = useAuth();
     const [username, setUsername] = useState('');
     const [bio, setBio] = useState('');
     const [loading, setLoading] = useState(false);
@@ -33,15 +35,17 @@ export default function ProfileSetupScreen({ onComplete }: { onComplete: () => v
 
         setLoading(true);
         try {
+            // Save profile (local-first, instant)
             await AuthService.updateProfile({
                 username: username.trim(),
                 bio: bio.trim(),
             });
-            onComplete();
+
+            // Update app state to show Game screen
+            setHasProfile(true);
         } catch (error: any) {
             console.error('Save profile error:', error);
             Alert.alert('Error', error.message || 'Failed to save profile');
-        } finally {
             setLoading(false);
         }
     };
