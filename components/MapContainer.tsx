@@ -1,15 +1,16 @@
 import * as React from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { GPSPoint } from '../lib/types';
+import { GPSPoint, Territory } from '../lib/types';
 
 interface MapContainerProps {
     location: GPSPoint | null;
     path: GPSPoint[];
+    territories?: Territory[];
     style?: any;
 }
 
-function MapContainerComponent({ location, path, style }: MapContainerProps) {
+function MapContainerComponent({ location, path, territories = [], style }: MapContainerProps) {
     const webViewRef = React.useRef<WebView>(null);
     const [mapReady, setMapReady] = React.useState(false);
 
@@ -39,7 +40,6 @@ function MapContainerComponent({ location, path, style }: MapContainerProps) {
                 `;
                 webViewRef.current.injectJavaScript(script);
             } else {
-                // Clear the path when empty
                 const script = `
                     if (window.clearPath) {
                         window.clearPath();
@@ -50,6 +50,23 @@ function MapContainerComponent({ location, path, style }: MapContainerProps) {
             }
         }
     }, [path, mapReady]);
+
+    // Update territories when they change
+    React.useEffect(() => {
+        if (mapReady && webViewRef.current) {
+            const territoryData = JSON.stringify(territories.map(t => ({
+                id: t.id,
+                polygon: t.polygon.map(coord => [coord[1], coord[0]])
+            })));
+            const script = `
+                if (window.updateTerritories) {
+                    window.updateTerritories(${territoryData});
+                }
+                true;
+            `;
+            webViewRef.current.injectJavaScript(script);
+        }
+    }, [territories, mapReady]);
 
     const initialLat = location?.lat || 37.7749;
     const initialLng = location?.lng || -122.4194;
@@ -128,6 +145,7 @@ function MapContainerComponent({ location, path, style }: MapContainerProps) {
 
         var userMarker = null;
         var pathLine = null;
+        var territoryLayers = [];
         var isFirstLocation = true;
 
         // Update user location
@@ -189,6 +207,29 @@ function MapContainerComponent({ location, path, style }: MapContainerProps) {
             }
         };
 
+        // Update conquered territories
+        window.updateTerritories = function(territories) {
+            // Clear old territory layers
+            territoryLayers.forEach(function(layer) {
+                map.removeLayer(layer);
+            });
+            territoryLayers = [];
+
+            // Add new territories
+            territories.forEach(function(territory) {
+                if (territory.polygon && territory.polygon.length > 2) {
+                    var polygon = L.polygon(territory.polygon, {
+                        color: '#22d3ee',
+                        weight: 2,
+                        opacity: 0.8,
+                        fillColor: '#22d3ee',
+                        fillOpacity: 0.2
+                    }).addTo(map);
+                    territoryLayers.push(polygon);
+                }
+            });
+        };
+
         // Signal that map is ready
         window.ReactNativeWebView.postMessage('mapReady');
     </script>
@@ -245,11 +286,13 @@ const styles = StyleSheet.create({
 
 // Memoize to prevent unnecessary re-renders
 const MapContainer = React.memo(MapContainerComponent, (prevProps, nextProps) => {
-    // Only re-render if location or path actually changed meaningfully
     const locationSame = prevProps.location?.lat === nextProps.location?.lat &&
                          prevProps.location?.lng === nextProps.location?.lng;
     const pathSame = prevProps.path.length === nextProps.path.length;
-    return locationSame && pathSame;
+    const prevTerritoryIds = (prevProps.territories || []).map(t => t.id).join(',');
+    const nextTerritoryIds = (nextProps.territories || []).map(t => t.id).join(',');
+    const territoriesSame = prevTerritoryIds === nextTerritoryIds;
+    return locationSame && pathSame && territoriesSame;
 });
 
 export default MapContainer;

@@ -189,7 +189,7 @@ export default function GameScreen() {
 
     return (
         <View style={styles.container}>
-            <MapContainer location={location} path={path} style={styles.map} />
+            <MapContainer location={location} path={path} territories={savedTerritories} style={styles.map} />
 
             {locationError && (
                 <View style={styles.errorOverlay}>
