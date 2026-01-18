@@ -1,21 +1,23 @@
 import * as React from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
-import { GPSPoint } from '../lib/types';
+import { GPSPoint, Territory } from '../lib/types';
 
 interface MapContainerProps {
     location: GPSPoint | null;
     path: GPSPoint[];
+    territories?: Territory[];
     style?: any;
 }
 
 // Dark map tiles from CartoDB
 const DARK_TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 
-export default function MapContainer({ location, path, style }: MapContainerProps) {
+export default function MapContainer({ location, path, territories = [], style }: MapContainerProps) {
     const mapRef = React.useRef<HTMLDivElement>(null);
     const mapInstanceRef = React.useRef<any>(null);
     const markerRef = React.useRef<any>(null);
     const polylineRef = React.useRef<any>(null);
+    const territoryLayersRef = React.useRef<any[]>([]);
     const [leaflet, setLeaflet] = React.useState<any>(null);
 
     // Load Leaflet dynamically
@@ -136,6 +138,34 @@ export default function MapContainer({ location, path, style }: MapContainerProp
             }).addTo(map);
         }
     }, [leaflet, path]);
+
+    // Update territory polygons
+    React.useEffect(() => {
+        if (!leaflet || !mapInstanceRef.current) return;
+
+        const map = mapInstanceRef.current;
+
+        // Remove existing territory layers
+        territoryLayersRef.current.forEach(layer => {
+            layer.remove();
+        });
+        territoryLayersRef.current = [];
+
+        // Draw territories
+        territories.forEach(territory => {
+            if (territory.polygon && territory.polygon.length > 2) {
+                const latLngs = territory.polygon.map(coord => [coord[1], coord[0]]);
+                const polygon = leaflet.polygon(latLngs, {
+                    color: '#22d3ee',
+                    weight: 2,
+                    opacity: 0.8,
+                    fillColor: '#22d3ee',
+                    fillOpacity: 0.2,
+                }).addTo(map);
+                territoryLayersRef.current.push(polygon);
+            }
+        });
+    }, [leaflet, territories]);
 
     return (
         <View style={[styles.container, style]}>
