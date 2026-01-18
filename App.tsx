@@ -1,4 +1,4 @@
-import React, { useEffect, useState, createContext, useContext } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -11,19 +11,9 @@ import LandingScreen from './screens/LandingScreen';
 import ProfileSetupScreen from './screens/ProfileSetupScreen';
 import { supabase } from './lib/supabase';
 import { AuthService } from './services/AuthService';
+import { AuthContext } from './contexts/AuthContext';
 
 const Stack = createNativeStackNavigator();
-
-// Context to allow screens to update auth state
-type AuthContextType = {
-  setHasProfile: (value: boolean) => void;
-  refreshAuthState: () => Promise<void>;
-};
-export const AuthContext = createContext<AuthContextType>({
-  setHasProfile: () => {},
-  refreshAuthState: async () => {},
-});
-export const useAuth = () => useContext(AuthContext);
 
 // Error Boundary to catch crashes
 class ErrorBoundary extends React.Component<

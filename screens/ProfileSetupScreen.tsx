@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { User, AlignLeft, Check } from 'lucide-react-native';
 import { AuthService } from '../services/AuthService';
-import { useAuth } from '../App';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function ProfileSetupScreen() {
     const { setHasProfile } = useAuth();

@@ -6,8 +6,11 @@ import { useNavigation } from '@react-navigation/native';
 import { LocationService } from '../services/LocationService';
 import { GameEngine } from '../services/GameEngine';
 import { WakeLockService } from '../services/WakeLockService';
-import { GPSPoint, ActivityType } from '../lib/types';
+import { TerritoryService } from '../services/TerritoryService';
+import { GPSPoint, ActivityType, Territory } from '../lib/types';
 import MapContainer from '../components/MapContainer';
+import { supabase } from '../lib/supabase';
+import { v4 as uuidv4 } from 'uuid';
 
 export default function GameScreen() {
     const navigation = useNavigation<any>();
@@ -18,11 +21,33 @@ export default function GameScreen() {
     const [showActivityPicker, setShowActivityPicker] = React.useState(false);
     const [activityType, setActivityType] = React.useState<ActivityType | null>(null);
     const [locationError, setLocationError] = React.useState<string | null>(null);
+    const [savedTerritories, setSavedTerritories] = React.useState<Territory[]>([]);
+    const [totalArea, setTotalArea] = React.useState(0);
 
     const isTrackingRef = React.useRef(false);
     const pathRef = React.useRef<GPSPoint[]>([]);
+    const activityTypeRef = React.useRef<ActivityType | null>(null);
     isTrackingRef.current = isTracking;
     pathRef.current = path;
+    activityTypeRef.current = activityType;
+
+    React.useEffect(() => {
+        const loadTerritories = async () => {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session?.user) {
+                    const territories = await TerritoryService.getUserTerritories(session.user.id);
+                    setSavedTerritories(territories);
+                    const total = territories.reduce((sum, t) => sum + t.area, 0);
+                    setTotalArea(total);
+                    console.log(`Loaded ${territories.length} territories, total area: ${total}m²`);
+                }
+            } catch (err) {
+                console.error('Failed to load territories:', err);
+            }
+        };
+        loadTerritories();
+    }, []);
 
     React.useEffect(() => {
         let unsubscribe: (() => void) | undefined;
@@ -95,7 +120,7 @@ export default function GameScreen() {
         }
     }, [isTracking]);
 
-    const handleStartPress = () => {
+    const handleStartPress = async () => {
         if (locationError) {
             Alert.alert(
                 "Location Required",
@@ -106,17 +131,37 @@ export default function GameScreen() {
         }
 
         if (isTracking) {
-            // Stop tracking - check loop closure with current path
             const currentPath = pathRef.current;
             const currentArea = area;
+            const currentActivityType = activityTypeRef.current;
 
-            // First stop tracking to prevent new points being added
             setIsTracking(false);
 
-            // Then check results and show alert
             const { isClosed } = GameEngine.checkLoopClosure(currentPath);
             if (isClosed && currentArea > 0) {
-                Alert.alert("Loop Closed!", `You conquered ${currentArea.toFixed(2)} m²!`);
+                try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    const userId = session?.user?.id || 'anonymous';
+                    const activityId = uuidv4();
+
+                    const territory = GameEngine.processTerritory(currentPath, userId, activityId);
+
+                    if (territory) {
+                        const saved = await TerritoryService.saveTerritory(territory);
+                        setSavedTerritories(prev => [saved, ...prev]);
+                        setTotalArea(prev => prev + saved.area);
+
+                        Alert.alert(
+                            "Territory Conquered!",
+                            `You claimed ${(saved.area / 1000000).toFixed(4)} km² (${saved.area.toFixed(0)} m²)!\n\nTotal conquered: ${((totalArea + saved.area) / 1000000).toFixed(4)} km²`
+                        );
+                    } else {
+                        Alert.alert("Loop Closed!", `You conquered ${currentArea.toFixed(2)} m²!`);
+                    }
+                } catch (err) {
+                    console.error('Failed to save territory:', err);
+                    Alert.alert("Loop Closed!", `You conquered ${currentArea.toFixed(2)} m²!`);
+                }
             } else if (currentPath.length > 0) {
                 Alert.alert(
                     "Loop Not Closed",
@@ -124,7 +169,6 @@ export default function GameScreen() {
                 );
             }
 
-            // Clear path and area after a small delay to avoid render glitch
             setTimeout(() => {
                 setPath([]);
                 setArea(0);
@@ -165,8 +209,8 @@ export default function GameScreen() {
                     </TouchableOpacity>
 
                     <View style={styles.statsContainer}>
-                        <Text style={styles.statsLabel}>{isTracking ? 'CURRENT AREA' : 'GLOBAL GRID'}</Text>
-                        <Text style={styles.statsValue}>{(area / 1000000).toFixed(4)} km²</Text>
+                        <Text style={styles.statsLabel}>{isTracking ? 'CURRENT AREA' : 'TOTAL CONQUERED'}</Text>
+                        <Text style={styles.statsValue}>{((isTracking ? area : totalArea) / 1000000).toFixed(4)} km²</Text>
                     </View>
 
                     <TouchableOpacity style={styles.iconButton}>

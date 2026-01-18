@@ -203,7 +203,7 @@ export const AuthService = {
                 avatar_url: updates.avatarUrl || avatarUrl
             })
             .then(() => console.log('Profile synced to cloud'))
-            .catch((err) => console.log('Cloud sync failed, will retry later:', err));
+            .catch((err: Error) => console.log('Cloud sync failed, will retry later:', err.message));
 
         return profile;
     },
