@@ -54,8 +54,6 @@
       "expo-location"
     ],
     "extra": {
-      "supabaseUrl": "https://ckrdbwqklcxsfcnlfdvi.supabase.co",
-      "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNrcmRid3FrbGN4c2ZjbmxmZHZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzMTQwNzksImV4cCI6MjA4Mzg5MDA3OX0.2nbyiLLKWgBdiItRaFbhSoaugRwlV4mNZ1A09jLQjPk",
       "eas": {
         "projectId": "75ecf103-6cba-4b61-b280-0aaf3276695d"
       }

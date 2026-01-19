@@ -1,11 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
-import Constants from 'expo-constants';
 
-// Get Supabase config from app.json extra field (works in EAS builds)
-const extra = Constants.expoConfig?.extra || {};
-const supabaseUrl = extra.supabaseUrl || process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseAnonKey = extra.supabaseAnonKey || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key';
+// Hardcoded Supabase config - anon key is safe to be public
+// This ensures the app works in all build scenarios
+const supabaseUrl = 'https://ckrdbwqklcxsfcnlfdvi.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNrcmRid3FrbGN4c2ZjbmxmZHZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzMTQwNzksImV4cCI6MjA4Mzg5MDA3OX0.2nbyiLLKWgBdiItRaFbhSoaugRwlV4mNZ1A09jLQjPk';
 
 console.log('Supabase URL:', supabaseUrl);
 
