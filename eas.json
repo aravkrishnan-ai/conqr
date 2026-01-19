@@ -22,9 +22,13 @@
         "buildType": "apk",
         "withoutCredentials": true
       },
+      "ios": {
+        "distribution": "internal"
+      },
       "channel": "preview"
     },
     "production": {
+      "autoIncrement": true,
       "channel": "production"
     }
   },
