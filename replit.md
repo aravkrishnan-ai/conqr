@@ -54,16 +54,34 @@ CONQR is a mobile app (Android/iOS) where users claim real-world territory by ru
   - Removed unused packages (maplibre-react-native, dexie, react-native-maps)
   - Fixed AuthService async/await pattern
   - Territory polygons now render on the map
+- **Hardcoded Supabase credentials**: Supabase URL and anon key now hardcoded in lib/supabase.ts for reliable native builds
+- **iOS build configuration**: 
+  - Added ITSAppUsesNonExemptEncryption: false to app.json
+  - Configured eas.json with iOS internal distribution for preview profile
+  - Fixed GoogleSignInButton.tsx.web for web compatibility
 
-## Building APK
+## Building Apps
+
+### Android APK
 ```bash
-EXPO_TOKEN=$EXPO_TOKEN eas build -p android --profile development --non-interactive
+EXPO_TOKEN=$EXPO_TOKEN eas build -p android --profile preview --non-interactive
 ```
 
+### iOS Simulator
+```bash
+EXPO_TOKEN=$EXPO_TOKEN eas build -p ios --profile development --non-interactive
+```
+
+### iOS Device (requires Apple Developer credentials)
+```bash
+EXPO_TOKEN=$EXPO_TOKEN eas build -p ios --profile preview
+```
+Note: iOS device builds require an Apple Developer Program account ($99/year) and proper provisioning profiles.
+
 Build profiles in `eas.json`:
-- `development` - Development build with dev client
-- `preview` - Internal distribution APK
-- `production` - Production build
+- `development` - Development build (iOS: simulator only, Android: APK with dev client)
+- `preview` - Internal distribution (iOS: ad-hoc, Android: APK)
+- `production` - Production build for app stores
 
 ## User Preferences
 - Dark theme throughout
