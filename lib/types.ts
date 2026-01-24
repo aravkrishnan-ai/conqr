@@ -29,6 +29,8 @@ export interface Activity {
   duration: number; // seconds
   polylines: GPSPoint[][]; // Array of segments (handling pauses/auto-resume)
   isSynced: boolean;
+  territoryId?: string; // Links to territory if loop was closed
+  averageSpeed?: number; // m/s
 }
 
 export interface Territory {

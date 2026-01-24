@@ -43,7 +43,17 @@
       "Bash(EXPO_TOKEN=\"2SKb38ynVSUdSbnor9V5whDGSx6JgVGxD6r74gkZ\" npx expo start:*)",
       "Bash(CI=1 npx expo start:*)",
       "Bash(EXPO_TOKEN=\"2SKb38ynVSUdSbnor9V5whDGSx6JgVGxD6r74gkZ\" eas update:configure:*)",
-      "Bash(EXPO_TOKEN=\"2SKb38ynVSUdSbnor9V5whDGSx6JgVGxD6r74gkZ\" eas update:*)"
+      "Bash(EXPO_TOKEN=\"2SKb38ynVSUdSbnor9V5whDGSx6JgVGxD6r74gkZ\" eas update:*)",
+      "Bash(git fetch:*)",
+      "Bash(git push:*)",
+      "Bash(npm run lint:*)",
+      "Bash(java:*)",
+      "Bash(git add:*)",
+      "Bash(git restore:*)",
+      "Bash(git commit:*)",
+      "Bash(npx expo-updates:*)",
+      "Bash(adb devices:*)",
+      "Bash(git pull:*)"
     ]
   }
 }

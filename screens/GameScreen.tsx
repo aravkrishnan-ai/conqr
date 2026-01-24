@@ -7,7 +7,8 @@ import { LocationService } from '../services/LocationService';
 import { GameEngine } from '../services/GameEngine';
 import { WakeLockService } from '../services/WakeLockService';
 import { TerritoryService } from '../services/TerritoryService';
-import { GPSPoint, ActivityType, Territory } from '../lib/types';
+import { ActivityService } from '../services/ActivityService';
+import { GPSPoint, ActivityType, Territory, Activity } from '../lib/types';
 import MapContainer from '../components/MapContainer';
 import { supabase } from '../lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
@@ -23,13 +24,17 @@ export default function GameScreen() {
     const [locationError, setLocationError] = React.useState<string | null>(null);
     const [savedTerritories, setSavedTerritories] = React.useState<Territory[]>([]);
     const [totalArea, setTotalArea] = React.useState(0);
+    const [trackingStartTime, setTrackingStartTime] = React.useState<number | null>(null);
+    const [currentDistance, setCurrentDistance] = React.useState(0);
 
     const isTrackingRef = React.useRef(false);
     const pathRef = React.useRef<GPSPoint[]>([]);
     const activityTypeRef = React.useRef<ActivityType | null>(null);
+    const startTimeRef = React.useRef<number | null>(null);
     isTrackingRef.current = isTracking;
     pathRef.current = path;
     activityTypeRef.current = activityType;
+    startTimeRef.current = trackingStartTime;
 
     React.useEffect(() => {
         const loadTerritories = async () => {
@@ -67,6 +72,9 @@ export default function GameScreen() {
                                 const newPath = [...prev, point];
                                 try {
                                     setArea(GameEngine.calculateArea(newPath));
+                                    // Calculate distance in real-time
+                                    const dist = ActivityService.calculateDistance(newPath);
+                                    setCurrentDistance(dist);
                                 } catch (calcErr) {
                                     console.error('Area calculation error:', calcErr);
                                 }
@@ -134,45 +142,89 @@ export default function GameScreen() {
             const currentPath = pathRef.current;
             const currentArea = area;
             const currentActivityType = activityTypeRef.current;
+            const startTime = startTimeRef.current || Date.now();
+            const endTime = Date.now();
 
             setIsTracking(false);
 
-            const { isClosed } = GameEngine.checkLoopClosure(currentPath);
-            if (isClosed && currentArea > 0) {
-                try {
-                    const { data: { session } } = await supabase.auth.getSession();
-                    const userId = session?.user?.id || 'anonymous';
-                    const activityId = uuidv4();
+            // Always save the activity, regardless of loop closure
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                const userId = session?.user?.id || 'anonymous';
+                const activityId = uuidv4();
 
+                // Calculate activity metrics
+                const distance = ActivityService.calculateDistance(currentPath);
+                const duration = Math.round((endTime - startTime) / 1000);
+                const averageSpeed = ActivityService.calculateAverageSpeed(currentPath);
+
+                let savedTerritory: Territory | null = null;
+                const { isClosed } = GameEngine.checkLoopClosure(currentPath);
+
+                // Process territory if loop is closed
+                if (isClosed && currentArea > 0) {
                     const territory = GameEngine.processTerritory(currentPath, userId, activityId);
-
                     if (territory) {
-                        const saved = await TerritoryService.saveTerritory(territory);
-                        setSavedTerritories(prev => [saved, ...prev]);
-                        setTotalArea(prev => prev + saved.area);
-
-                        Alert.alert(
-                            "Territory Conquered!",
-                            `You claimed ${(saved.area / 1000000).toFixed(4)} km² (${saved.area.toFixed(0)} m²)!\n\nTotal conquered: ${((totalArea + saved.area) / 1000000).toFixed(4)} km²`
-                        );
-                    } else {
-                        Alert.alert("Loop Closed!", `You conquered ${currentArea.toFixed(2)} m²!`);
+                        savedTerritory = await TerritoryService.saveTerritory(territory);
+                        setSavedTerritories(prev => [savedTerritory!, ...prev]);
+                        setTotalArea(prev => prev + savedTerritory!.area);
                     }
-                } catch (err) {
-                    console.error('Failed to save territory:', err);
-                    Alert.alert("Loop Closed!", `You conquered ${currentArea.toFixed(2)} m²!`);
                 }
-            } else if (currentPath.length > 0) {
-                Alert.alert(
-                    "Loop Not Closed",
-                    "Return to your starting point to close the loop and claim territory."
-                );
+
+                // Create and save the activity
+                const activity: Activity = {
+                    id: activityId,
+                    userId,
+                    type: currentActivityType || 'WALK',
+                    startTime,
+                    endTime,
+                    distance,
+                    duration,
+                    polylines: [currentPath],
+                    isSynced: false,
+                    territoryId: savedTerritory?.id,
+                    averageSpeed
+                };
+
+                await ActivityService.saveActivity(activity);
+                console.log('Activity saved:', {
+                    id: activity.id,
+                    type: activity.type,
+                    distance: `${(distance / 1000).toFixed(2)} km`,
+                    duration: `${Math.floor(duration / 60)}m ${duration % 60}s`,
+                    hasTerritory: !!savedTerritory
+                });
+
+                // Show appropriate alert
+                if (savedTerritory) {
+                    Alert.alert(
+                        "Territory Conquered!",
+                        `${currentActivityType} completed!\n\n` +
+                        `Distance: ${(distance / 1000).toFixed(2)} km\n` +
+                        `Duration: ${Math.floor(duration / 60)}m ${duration % 60}s\n` +
+                        `Territory: ${(savedTerritory.area / 1000000).toFixed(4)} km²\n\n` +
+                        `Total conquered: ${((totalArea + savedTerritory.area) / 1000000).toFixed(4)} km²`
+                    );
+                } else if (currentPath.length > 1) {
+                    Alert.alert(
+                        "Activity Saved!",
+                        `${currentActivityType} completed!\n\n` +
+                        `Distance: ${(distance / 1000).toFixed(2)} km\n` +
+                        `Duration: ${Math.floor(duration / 60)}m ${duration % 60}s\n\n` +
+                        `Tip: Close your loop to claim territory!`
+                    );
+                }
+            } catch (err) {
+                console.error('Failed to save activity:', err);
+                Alert.alert("Error", "Failed to save activity. Please try again.");
             }
 
             setTimeout(() => {
                 setPath([]);
                 setArea(0);
                 setActivityType(null);
+                setTrackingStartTime(null);
+                setCurrentDistance(0);
             }, 100);
         } else {
             setShowActivityPicker(true);
@@ -185,6 +237,9 @@ export default function GameScreen() {
         setIsTracking(true);
         setPath([]);
         setArea(0);
+        setTrackingStartTime(Date.now());
+        setCurrentDistance(0);
+        console.log('Started tracking:', type, 'at', new Date().toISOString());
     };
 
     return (
@@ -209,8 +264,19 @@ export default function GameScreen() {
                     </TouchableOpacity>
 
                     <View style={styles.statsContainer}>
-                        <Text style={styles.statsLabel}>{isTracking ? 'CURRENT AREA' : 'TOTAL CONQUERED'}</Text>
-                        <Text style={styles.statsValue}>{((isTracking ? area : totalArea) / 1000000).toFixed(4)} km²</Text>
+                        {isTracking ? (
+                            <>
+                                <Text style={styles.statsLabel}>DISTANCE / AREA</Text>
+                                <Text style={styles.statsValue}>
+                                    {(currentDistance / 1000).toFixed(2)} km • {(area / 1000000).toFixed(4)} km²
+                                </Text>
+                            </>
+                        ) : (
+                            <>
+                                <Text style={styles.statsLabel}>TOTAL CONQUERED</Text>
+                                <Text style={styles.statsValue}>{(totalArea / 1000000).toFixed(4)} km²</Text>
+                            </>
+                        )}
                     </View>
 
                     <TouchableOpacity style={styles.iconButton}>
