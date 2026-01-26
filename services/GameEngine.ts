@@ -27,34 +27,68 @@ export const GameEngine = {
     },
 
     checkLoopClosure(path: GPSPoint[]): { isClosed: boolean, distance: number } {
-        if (path.length < 10) return { isClosed: false, distance: Infinity };
+        if (!Array.isArray(path) || path.length < 10) {
+            return { isClosed: false, distance: Infinity };
+        }
 
         const start = path[0];
         const end = path[path.length - 1];
 
-        const dist = getDistance(
-            { latitude: start.lat, longitude: start.lng },
-            { latitude: end.lat, longitude: end.lng }
-        );
+        // Validate start and end points
+        if (!start || !end ||
+            typeof start.lat !== 'number' || typeof start.lng !== 'number' ||
+            typeof end.lat !== 'number' || typeof end.lng !== 'number') {
+            return { isClosed: false, distance: Infinity };
+        }
 
-        return { isClosed: dist <= 200, distance: dist };
+        try {
+            const dist = getDistance(
+                { latitude: start.lat, longitude: start.lng },
+                { latitude: end.lat, longitude: end.lng }
+            );
+            return { isClosed: dist <= 200, distance: dist };
+        } catch (err) {
+            console.error('Error checking loop closure:', err);
+            return { isClosed: false, distance: Infinity };
+        }
     },
 
     calculateArea(path: GPSPoint[]): number {
-        const coords = path.map(p => [p.lng, p.lat]);
-        if (coords.length < 3) return 0;
+        if (!Array.isArray(path) || path.length < 3) return 0;
+
+        // Filter out invalid points
+        const validPath = path.filter(p =>
+            p && typeof p.lng === 'number' && typeof p.lat === 'number' &&
+            !isNaN(p.lng) && !isNaN(p.lat)
+        );
+
+        if (validPath.length < 3) return 0;
+
+        const coords = validPath.map(p => [p.lng, p.lat]);
         if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
             coords.push(coords[0]);
         }
         try {
             return area(polygon([coords]));
-        } catch { return 0; }
+        } catch (err) {
+            console.error('Error calculating area:', err);
+            return 0;
+        }
     },
 
     processTerritory(path: GPSPoint[], ownerId: string, activityId: string): Territory | null {
+        if (!Array.isArray(path) || path.length < 10) return null;
         if (!this.checkLoopClosure(path).isClosed) return null;
 
-        const coords = path.map(p => [p.lng, p.lat]);
+        // Filter out invalid points
+        const validPath = path.filter(p =>
+            p && typeof p.lng === 'number' && typeof p.lat === 'number' &&
+            !isNaN(p.lng) && !isNaN(p.lat)
+        );
+
+        if (validPath.length < 10) return null;
+
+        const coords = validPath.map(p => [p.lng, p.lat]);
 
         if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
             coords.push(coords[0]);

@@ -26,11 +26,15 @@ export default function GameScreen() {
     const [totalArea, setTotalArea] = React.useState(0);
     const [trackingStartTime, setTrackingStartTime] = React.useState<number | null>(null);
     const [currentDistance, setCurrentDistance] = React.useState(0);
+    const [elapsedTime, setElapsedTime] = React.useState(0);
+    const [currentSpeed, setCurrentSpeed] = React.useState(0);
+    const [isSaving, setIsSaving] = React.useState(false);
 
     const isTrackingRef = React.useRef(false);
     const pathRef = React.useRef<GPSPoint[]>([]);
     const activityTypeRef = React.useRef<ActivityType | null>(null);
     const startTimeRef = React.useRef<number | null>(null);
+    const timerRef = React.useRef<NodeJS.Timeout | null>(null);
     isTrackingRef.current = isTracking;
     pathRef.current = path;
     activityTypeRef.current = activityType;
@@ -128,6 +132,46 @@ export default function GameScreen() {
         }
     }, [isTracking]);
 
+    // Timer for elapsed time during tracking
+    React.useEffect(() => {
+        // Clear any existing timer first
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+
+        if (isTracking && trackingStartTime) {
+            // Update immediately
+            const updateStats = () => {
+                const elapsed = Math.floor((Date.now() - trackingStartTime) / 1000);
+                setElapsedTime(elapsed);
+
+                // Calculate current speed from recent GPS points
+                const recentPath = pathRef.current.slice(-5);
+                if (recentPath.length >= 2) {
+                    const recentSpeeds = recentPath
+                        .map(p => p.speed)
+                        .filter((s): s is number => s !== null && s !== undefined && s >= 0);
+                    if (recentSpeeds.length > 0) {
+                        setCurrentSpeed(recentSpeeds.reduce((a, b) => a + b, 0) / recentSpeeds.length);
+                    }
+                }
+            };
+
+            // Run immediately, then every second
+            updateStats();
+            timerRef.current = setInterval(updateStats, 1000);
+        }
+        // Note: Don't reset elapsedTime here - it's reset in startTracking and handleStartPress
+
+        return () => {
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
+        };
+    }, [isTracking, trackingStartTime]);
+
     const handleStartPress = async () => {
         if (locationError) {
             Alert.alert(
@@ -138,14 +182,21 @@ export default function GameScreen() {
             return;
         }
 
+        // Prevent double-taps while saving
+        if (isSaving) {
+            return;
+        }
+
         if (isTracking) {
-            const currentPath = pathRef.current;
+            // Capture current state before any updates
+            const currentPath = [...pathRef.current]; // Clone to avoid mutation
             const currentArea = area;
             const currentActivityType = activityTypeRef.current;
             const startTime = startTimeRef.current || Date.now();
             const endTime = Date.now();
 
             setIsTracking(false);
+            setIsSaving(true);
 
             // Always save the activity, regardless of loop closure
             try {
@@ -171,7 +222,7 @@ export default function GameScreen() {
                     }
                 }
 
-                // Create and save the activity
+                // Create the activity object
                 const activity: Activity = {
                     id: activityId,
                     userId,
@@ -186,59 +237,87 @@ export default function GameScreen() {
                     averageSpeed
                 };
 
-                await ActivityService.saveActivity(activity);
-                console.log('Activity saved:', {
-                    id: activity.id,
-                    type: activity.type,
-                    distance: `${(distance / 1000).toFixed(2)} km`,
-                    duration: `${Math.floor(duration / 60)}m ${duration % 60}s`,
-                    hasTerritory: !!savedTerritory
-                });
+                // Save activity (returns null if doesn't meet minimum requirements)
+                const savedActivity = await ActivityService.saveActivity(activity);
 
-                // Show appropriate alert
-                if (savedTerritory) {
+                if (savedActivity) {
+                    console.log('Activity saved:', {
+                        id: savedActivity.id,
+                        type: savedActivity.type,
+                        distance: `${(distance / 1000).toFixed(2)} km`,
+                        duration: `${Math.floor(duration / 60)}m ${duration % 60}s`,
+                        hasTerritory: !!savedTerritory
+                    });
+
+                    // Format duration for display
+                    const durationFormatted = ActivityService.formatDuration(duration);
+                    const paceFormatted = averageSpeed > 0 ? ActivityService.calculatePace(averageSpeed) : '--:--';
+
+                    // Show appropriate alert
+                    if (savedTerritory) {
+                        Alert.alert(
+                            "Territory Conquered!",
+                            `${currentActivityType} completed!\n\n` +
+                            `Distance: ${(distance / 1000).toFixed(2)} km\n` +
+                            `Duration: ${durationFormatted}\n` +
+                            `Pace: ${paceFormatted} /km\n` +
+                            `Territory: ${(savedTerritory.area / 1000000).toFixed(4)} km²\n\n` +
+                            `Total conquered: ${((totalArea + savedTerritory.area) / 1000000).toFixed(4)} km²`
+                        );
+                    } else {
+                        Alert.alert(
+                            "Activity Saved!",
+                            `${currentActivityType} completed!\n\n` +
+                            `Distance: ${(distance / 1000).toFixed(2)} km\n` +
+                            `Duration: ${durationFormatted}\n` +
+                            `Pace: ${paceFormatted} /km\n\n` +
+                            `Tip: Close your loop to claim territory!`
+                        );
+                    }
+                } else {
+                    // Activity didn't meet minimum requirements
                     Alert.alert(
-                        "Territory Conquered!",
-                        `${currentActivityType} completed!\n\n` +
-                        `Distance: ${(distance / 1000).toFixed(2)} km\n` +
-                        `Duration: ${Math.floor(duration / 60)}m ${duration % 60}s\n` +
-                        `Territory: ${(savedTerritory.area / 1000000).toFixed(4)} km²\n\n` +
-                        `Total conquered: ${((totalArea + savedTerritory.area) / 1000000).toFixed(4)} km²`
-                    );
-                } else if (currentPath.length > 1) {
-                    Alert.alert(
-                        "Activity Saved!",
-                        `${currentActivityType} completed!\n\n` +
-                        `Distance: ${(distance / 1000).toFixed(2)} km\n` +
-                        `Duration: ${Math.floor(duration / 60)}m ${duration % 60}s\n\n` +
-                        `Tip: Close your loop to claim territory!`
+                        "Activity Too Short",
+                        "Activity wasn't saved because it didn't meet minimum requirements:\n\n" +
+                        "• At least 10 meters distance\n" +
+                        "• At least 5 seconds duration\n\n" +
+                        "Keep moving to record your activity!"
                     );
                 }
             } catch (err) {
                 console.error('Failed to save activity:', err);
                 Alert.alert("Error", "Failed to save activity. Please try again.");
+            } finally {
+                setIsSaving(false);
             }
 
-            setTimeout(() => {
-                setPath([]);
-                setArea(0);
-                setActivityType(null);
-                setTrackingStartTime(null);
-                setCurrentDistance(0);
-            }, 100);
+            // Reset state immediately (no setTimeout to avoid race conditions)
+            setPath([]);
+            setArea(0);
+            setActivityType(null);
+            setTrackingStartTime(null);
+            setCurrentDistance(0);
+            setElapsedTime(0);
+            setCurrentSpeed(0);
         } else {
             setShowActivityPicker(true);
         }
     };
 
     const startTracking = (type: ActivityType) => {
-        setActivityType(type);
-        setShowActivityPicker(false);
-        setIsTracking(true);
+        // Reset all tracking state before starting
         setPath([]);
         setArea(0);
-        setTrackingStartTime(Date.now());
         setCurrentDistance(0);
+        setElapsedTime(0);
+        setCurrentSpeed(0);
+
+        // Set new tracking session
+        setActivityType(type);
+        setTrackingStartTime(Date.now());
+        setShowActivityPicker(false);
+        setIsTracking(true);
+
         console.log('Started tracking:', type, 'at', new Date().toISOString());
     };
 
@@ -266,10 +345,19 @@ export default function GameScreen() {
                     <View style={styles.statsContainer}>
                         {isTracking ? (
                             <>
-                                <Text style={styles.statsLabel}>DISTANCE / AREA</Text>
+                                <Text style={styles.statsLabel}>{activityType || 'ACTIVITY'}</Text>
                                 <Text style={styles.statsValue}>
-                                    {(currentDistance / 1000).toFixed(2)} km • {(area / 1000000).toFixed(4)} km²
+                                    {(currentDistance / 1000).toFixed(2)} km
                                 </Text>
+                                <View style={styles.statsRow}>
+                                    <Text style={styles.statsSecondary}>
+                                        {ActivityService.formatDuration(elapsedTime)}
+                                    </Text>
+                                    <Text style={styles.statsDivider}>•</Text>
+                                    <Text style={styles.statsSecondary}>
+                                        {ActivityService.calculatePace(currentSpeed)} /km
+                                    </Text>
+                                </View>
                             </>
                         ) : (
                             <>
@@ -290,13 +378,31 @@ export default function GameScreen() {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.startButton, isTracking && styles.stopButton]}
+                        style={[styles.startButton, isTracking && styles.stopButton, isSaving && styles.savingButton]}
                         onPress={handleStartPress}
+                        disabled={isSaving}
                     >
-                        {isTracking ? <Square color="#fff" size={24} fill="#fff" /> : <Play color="#000" size={24} fill="#000" />}
-                        <Text style={[styles.startButtonText, isTracking && styles.stopButtonText]}>
-                            {isTracking ? 'STOP CONQUERING' : 'START CONQUERING'}
-                        </Text>
+                        {isSaving ? (
+                            <>
+                                <Text style={[styles.startButtonText, styles.stopButtonText]}>
+                                    SAVING...
+                                </Text>
+                            </>
+                        ) : isTracking ? (
+                            <>
+                                <Square color="#fff" size={24} fill="#fff" />
+                                <Text style={[styles.startButtonText, styles.stopButtonText]}>
+                                    STOP CONQUERING
+                                </Text>
+                            </>
+                        ) : (
+                            <>
+                                <Play color="#000" size={24} fill="#000" />
+                                <Text style={styles.startButtonText}>
+                                    START CONQUERING
+                                </Text>
+                            </>
+                        )}
                     </TouchableOpacity>
                 </View>
             </SafeAreaView>
@@ -419,9 +525,23 @@ const styles = StyleSheet.create({
         letterSpacing: 1,
     },
     statsValue: {
-        fontSize: 16,
+        fontSize: 18,
         color: '#fff',
         fontWeight: 'bold',
+    },
+    statsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 2,
+    },
+    statsSecondary: {
+        fontSize: 12,
+        color: '#a1a1aa',
+    },
+    statsDivider: {
+        fontSize: 12,
+        color: '#52525b',
+        marginHorizontal: 6,
     },
     bottomControls: {
         flexDirection: 'row',
@@ -451,6 +571,10 @@ const styles = StyleSheet.create({
     },
     stopButton: {
         backgroundColor: '#ef4444',
+    },
+    savingButton: {
+        backgroundColor: '#71717a',
+        opacity: 0.8,
     },
     startButtonText: {
         color: '#000',

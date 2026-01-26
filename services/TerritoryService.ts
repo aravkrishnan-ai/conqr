@@ -2,8 +2,76 @@ import { Territory } from '../lib/types';
 import { supabase } from '../lib/supabase';
 import { db } from '../lib/db';
 
+/**
+ * Safely parse JSON data from cloud
+ */
+const safeParseJson = <T>(data: any, fallback: T): T => {
+    if (!data) return fallback;
+    if (typeof data === 'object') return data as T;
+    if (typeof data === 'string') {
+        try {
+            return JSON.parse(data);
+        } catch (err) {
+            console.error('Failed to parse JSON:', err);
+            return fallback;
+        }
+    }
+    return fallback;
+};
+
+/**
+ * Validate a territory object has required fields
+ */
+const isValidTerritory = (t: any): boolean => {
+    return t &&
+        typeof t.id === 'string' &&
+        typeof t.ownerId === 'string' &&
+        typeof t.area === 'number' &&
+        t.center && typeof t.center.lat === 'number' && typeof t.center.lng === 'number' &&
+        Array.isArray(t.polygon);
+};
+
+/**
+ * Map cloud territory data to local format
+ */
+const mapCloudTerritory = (t: any): Territory | null => {
+    try {
+        const center = safeParseJson<{ lat: number; lng: number }>(t.center, { lat: 0, lng: 0 });
+        const polygon = safeParseJson<[number, number][]>(t.polygon, []);
+
+        const territory: Territory = {
+            id: t.id,
+            name: t.name || '',
+            ownerId: t.owner_id,
+            activityId: t.activity_id || '',
+            claimedAt: t.claimed_at ? new Date(t.claimed_at).getTime() : Date.now(),
+            area: typeof t.area === 'number' ? t.area : 0,
+            perimeter: typeof t.perimeter === 'number' ? t.perimeter : 0,
+            center,
+            polygon,
+            history: []
+        };
+
+        if (!isValidTerritory(territory)) {
+            console.warn('Invalid territory data:', t.id);
+            return null;
+        }
+
+        return territory;
+    } catch (err) {
+        console.error('Error mapping territory:', err);
+        return null;
+    }
+};
+
 export const TerritoryService = {
     async saveTerritory(territory: Territory): Promise<Territory> {
+        // Validate territory before saving
+        if (!isValidTerritory(territory)) {
+            console.error('Invalid territory, cannot save:', territory.id);
+            throw new Error('Invalid territory data');
+        }
+
         await db.territories.put(territory);
 
         try {
@@ -22,6 +90,7 @@ export const TerritoryService = {
                     name: territory.name || null,
                     claimed_at: new Date(territory.claimedAt).toISOString(),
                     area: territory.area,
+                    perimeter: territory.perimeter,
                     center: { lat: territory.center.lat, lng: territory.center.lng },
                     polygon: territory.polygon
                 });
@@ -39,6 +108,11 @@ export const TerritoryService = {
     },
 
     async getUserTerritories(userId: string): Promise<Territory[]> {
+        if (!userId) {
+            console.warn('getUserTerritories called without userId');
+            return [];
+        }
+
         const localTerritories = await db.territories.toArray();
         const userLocal = localTerritories.filter((t: Territory) => t.ownerId === userId);
 
@@ -55,22 +129,13 @@ export const TerritoryService = {
             }
 
             if (data && data.length > 0) {
-                const cloudTerritories: Territory[] = data.map((t: any) => ({
-                    id: t.id,
-                    name: t.name || '',
-                    ownerId: t.owner_id,
-                    activityId: t.activity_id,
-                    claimedAt: new Date(t.claimed_at).getTime(),
-                    area: t.area,
-                    perimeter: 0,
-                    center: typeof t.center === 'string' ? JSON.parse(t.center) : t.center,
-                    polygon: typeof t.polygon === 'string' ? JSON.parse(t.polygon) : t.polygon,
-                    history: []
-                }));
+                const cloudTerritories: Territory[] = data
+                    .map(mapCloudTerritory)
+                    .filter((t): t is Territory => t !== null);
 
-                for (const territory of cloudTerritories) {
-                    await db.territories.put(territory);
-                }
+                // Cache to local db (fire and forget)
+                Promise.all(cloudTerritories.map(t => db.territories.put(t)))
+                    .catch(err => console.error('Failed to cache territories locally:', err));
 
                 return cloudTerritories;
             }
@@ -98,18 +163,9 @@ export const TerritoryService = {
             }
 
             if (data && data.length > 0) {
-                return data.map((t: any) => ({
-                    id: t.id,
-                    name: t.name || '',
-                    ownerId: t.owner_id,
-                    activityId: t.activity_id,
-                    claimedAt: new Date(t.claimed_at).getTime(),
-                    area: t.area,
-                    perimeter: 0,
-                    center: typeof t.center === 'string' ? JSON.parse(t.center) : t.center,
-                    polygon: typeof t.polygon === 'string' ? JSON.parse(t.polygon) : t.polygon,
-                    history: []
-                }));
+                return data
+                    .map(mapCloudTerritory)
+                    .filter((t): t is Territory => t !== null);
             }
 
             return localTerritories;
@@ -121,6 +177,30 @@ export const TerritoryService = {
 
     async getTotalArea(userId: string): Promise<number> {
         const territories = await this.getUserTerritories(userId);
-        return territories.reduce((sum, t) => sum + t.area, 0);
+        return territories.reduce((sum, t) => sum + (t.area || 0), 0);
+    },
+
+    async deleteTerritory(territoryId: string): Promise<boolean> {
+        try {
+            await db.territories.delete(territoryId);
+
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session?.user) {
+                    await supabase
+                        .from('territories')
+                        .delete()
+                        .eq('id', territoryId);
+                }
+            } catch (cloudErr) {
+                console.error('Failed to delete territory from cloud:', cloudErr);
+            }
+
+            console.log('Territory deleted:', territoryId);
+            return true;
+        } catch (err) {
+            console.error('Failed to delete territory:', err);
+            return false;
+        }
     }
 };

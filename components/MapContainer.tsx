@@ -13,32 +13,56 @@ interface MapContainerProps {
 function MapContainerComponent({ location, path, territories = [], style }: MapContainerProps) {
     const webViewRef = React.useRef<WebView>(null);
     const [mapReady, setMapReady] = React.useState(false);
+    const [webViewError, setWebViewError] = React.useState<string | null>(null);
+
+    // Safe script injection helper
+    const injectScript = React.useCallback((script: string) => {
+        if (!webViewRef.current) return;
+        try {
+            webViewRef.current.injectJavaScript(script);
+        } catch (err) {
+            console.error('Failed to inject script:', err);
+        }
+    }, []);
 
     // Update map when location changes
     React.useEffect(() => {
-        if (mapReady && webViewRef.current && location) {
+        if (mapReady && location) {
+            // Validate coordinates
+            if (typeof location.lat !== 'number' || typeof location.lng !== 'number' ||
+                isNaN(location.lat) || isNaN(location.lng)) {
+                console.warn('Invalid location coordinates:', location);
+                return;
+            }
             const script = `
                 if (window.updateLocation) {
                     window.updateLocation(${location.lat}, ${location.lng});
                 }
                 true;
             `;
-            webViewRef.current.injectJavaScript(script);
+            injectScript(script);
         }
-    }, [location, mapReady]);
+    }, [location, mapReady, injectScript]);
 
     // Update path when it changes
     React.useEffect(() => {
-        if (mapReady && webViewRef.current) {
-            if (path.length > 0) {
-                const pathCoords = JSON.stringify(path.map(p => [p.lat, p.lng]));
-                const script = `
-                    if (window.updatePath) {
-                        window.updatePath(${pathCoords});
-                    }
-                    true;
-                `;
-                webViewRef.current.injectJavaScript(script);
+        if (mapReady) {
+            if (path && path.length > 0) {
+                // Filter out invalid points
+                const validPath = path.filter(p =>
+                    p && typeof p.lat === 'number' && typeof p.lng === 'number' &&
+                    !isNaN(p.lat) && !isNaN(p.lng)
+                );
+                if (validPath.length > 0) {
+                    const pathCoords = JSON.stringify(validPath.map(p => [p.lat, p.lng]));
+                    const script = `
+                        if (window.updatePath) {
+                            window.updatePath(${pathCoords});
+                        }
+                        true;
+                    `;
+                    injectScript(script);
+                }
             } else {
                 const script = `
                     if (window.clearPath) {
@@ -46,17 +70,23 @@ function MapContainerComponent({ location, path, territories = [], style }: MapC
                     }
                     true;
                 `;
-                webViewRef.current.injectJavaScript(script);
+                injectScript(script);
             }
         }
-    }, [path, mapReady]);
+    }, [path, mapReady, injectScript]);
 
     // Update territories when they change
     React.useEffect(() => {
-        if (mapReady && webViewRef.current) {
-            const territoryData = JSON.stringify(territories.map(t => ({
+        if (mapReady && territories) {
+            // Filter out territories with invalid polygons
+            const validTerritories = territories.filter(t =>
+                t && t.id && Array.isArray(t.polygon) && t.polygon.length > 2
+            );
+            const territoryData = JSON.stringify(validTerritories.map(t => ({
                 id: t.id,
-                polygon: t.polygon.map(coord => [coord[1], coord[0]])
+                polygon: t.polygon
+                    .filter(coord => Array.isArray(coord) && coord.length >= 2)
+                    .map(coord => [coord[1], coord[0]])
             })));
             const script = `
                 if (window.updateTerritories) {
@@ -64,9 +94,9 @@ function MapContainerComponent({ location, path, territories = [], style }: MapC
                 }
                 true;
             `;
-            webViewRef.current.injectJavaScript(script);
+            injectScript(script);
         }
-    }, [territories, mapReady]);
+    }, [territories, mapReady, injectScript]);
 
     const initialLat = location?.lat || 37.7749;
     const initialLng = location?.lng || -122.4194;
@@ -238,17 +268,35 @@ function MapContainerComponent({ location, path, territories = [], style }: MapC
     `;
 
     const handleMessage = (event: any) => {
-        if (event.nativeEvent.data === 'mapReady') {
-            setMapReady(true);
-            // Send initial location if available
-            if (location && webViewRef.current) {
-                const script = `
-                    window.updateLocation(${location.lat}, ${location.lng});
-                    true;
-                `;
-                webViewRef.current.injectJavaScript(script);
+        try {
+            if (event.nativeEvent.data === 'mapReady') {
+                setMapReady(true);
+                setWebViewError(null);
+                // Send initial location if available
+                if (location &&
+                    typeof location.lat === 'number' && typeof location.lng === 'number' &&
+                    !isNaN(location.lat) && !isNaN(location.lng)) {
+                    const script = `
+                        window.updateLocation(${location.lat}, ${location.lng});
+                        true;
+                    `;
+                    injectScript(script);
+                }
             }
+        } catch (err) {
+            console.error('Error handling WebView message:', err);
         }
+    };
+
+    const handleError = (syntheticEvent: any) => {
+        const { nativeEvent } = syntheticEvent;
+        console.error('WebView error:', nativeEvent);
+        setWebViewError(nativeEvent.description || 'Map failed to load');
+    };
+
+    const handleHttpError = (syntheticEvent: any) => {
+        const { nativeEvent } = syntheticEvent;
+        console.error('WebView HTTP error:', nativeEvent);
     };
 
     return (
@@ -258,6 +306,8 @@ function MapContainerComponent({ location, path, territories = [], style }: MapC
                 source={{ html: mapHtml }}
                 style={styles.webview}
                 onMessage={handleMessage}
+                onError={handleError}
+                onHttpError={handleHttpError}
                 javaScriptEnabled={true}
                 domStorageEnabled={true}
                 startInLoadingState={false}
@@ -268,6 +318,8 @@ function MapContainerComponent({ location, path, territories = [], style }: MapC
                 showsHorizontalScrollIndicator={false}
                 showsVerticalScrollIndicator={false}
                 androidLayerType="hardware"
+                cacheEnabled={true}
+                cacheMode="LOAD_CACHE_ELSE_NETWORK"
             />
         </View>
     );
@@ -286,12 +338,27 @@ const styles = StyleSheet.create({
 
 // Memoize to prevent unnecessary re-renders
 const MapContainer = React.memo(MapContainerComponent, (prevProps, nextProps) => {
-    const locationSame = prevProps.location?.lat === nextProps.location?.lat &&
-                         prevProps.location?.lng === nextProps.location?.lng;
-    const pathSame = prevProps.path.length === nextProps.path.length;
-    const prevTerritoryIds = (prevProps.territories || []).map(t => t.id).join(',');
-    const nextTerritoryIds = (nextProps.territories || []).map(t => t.id).join(',');
-    const territoriesSame = prevTerritoryIds === nextTerritoryIds;
+    // Compare location
+    const prevLoc = prevProps.location;
+    const nextLoc = nextProps.location;
+    const locationSame = (prevLoc === null && nextLoc === null) ||
+        (prevLoc !== null && nextLoc !== null &&
+         prevLoc.lat === nextLoc.lat && prevLoc.lng === nextLoc.lng);
+
+    // Compare path - check both length and last point (for tracking updates)
+    const prevPath = prevProps.path || [];
+    const nextPath = nextProps.path || [];
+    const pathSame = prevPath.length === nextPath.length &&
+        (prevPath.length === 0 ||
+         (prevPath[prevPath.length - 1]?.lat === nextPath[nextPath.length - 1]?.lat &&
+          prevPath[prevPath.length - 1]?.lng === nextPath[nextPath.length - 1]?.lng));
+
+    // Compare territories
+    const prevTerritories = prevProps.territories || [];
+    const nextTerritories = nextProps.territories || [];
+    const territoriesSame = prevTerritories.length === nextTerritories.length &&
+        prevTerritories.every((t, i) => t.id === nextTerritories[i]?.id);
+
     return locationSame && pathSame && territoriesSame;
 });
 
