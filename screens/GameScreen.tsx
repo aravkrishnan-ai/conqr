@@ -1,7 +1,7 @@
 import * as React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Modal, Animated, Easing } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { User, Layers, Crosshair, Play, Square, Footprints, Bike, PersonStanding, MapPinOff } from 'lucide-react-native';
+import { User, Crosshair, Play, Square, Footprints, Bike, PersonStanding, MapPinOff } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import { LocationService } from '../services/LocationService';
 import { GameEngine } from '../services/GameEngine';
@@ -9,8 +9,9 @@ import { WakeLockService } from '../services/WakeLockService';
 import { TerritoryService } from '../services/TerritoryService';
 import { ActivityService } from '../services/ActivityService';
 import { GPSPoint, ActivityType, Territory, Activity } from '../lib/types';
-import MapContainer from '../components/MapContainer';
+import MapContainer, { MapContainerHandle } from '../components/MapContainer';
 import { supabase } from '../lib/supabase';
+import { getDistance } from 'geolib';
 import { v4 as uuidv4 } from 'uuid';
 
 export default function GameScreen() {
@@ -18,7 +19,6 @@ export default function GameScreen() {
     const [location, setLocation] = React.useState<GPSPoint | null>(null);
     const [path, setPath] = React.useState<GPSPoint[]>([]);
     const [isTracking, setIsTracking] = React.useState(false);
-    const [area, setArea] = React.useState(0);
     const [showActivityPicker, setShowActivityPicker] = React.useState(false);
     const [activityType, setActivityType] = React.useState<ActivityType | null>(null);
     const [locationError, setLocationError] = React.useState<string | null>(null);
@@ -30,15 +30,51 @@ export default function GameScreen() {
     const [currentSpeed, setCurrentSpeed] = React.useState(0);
     const [isSaving, setIsSaving] = React.useState(false);
 
+    const mapRef = React.useRef<MapContainerHandle>(null);
     const isTrackingRef = React.useRef(false);
     const pathRef = React.useRef<GPSPoint[]>([]);
     const activityTypeRef = React.useRef<ActivityType | null>(null);
     const startTimeRef = React.useRef<number | null>(null);
     const timerRef = React.useRef<NodeJS.Timeout | null>(null);
+    const runningDistanceRef = React.useRef(0);
+    // GPS jitter filter - track recent positions to detect if user is stationary
+    const recentPositionsRef = React.useRef<{ lat: number; lng: number; time: number }[]>([]);
+    const STILLNESS_WINDOW_MS = 3000; // 3 seconds window (reduced from 5)
+    const STILLNESS_THRESHOLD_M = 3; // Must move at least 3 meters in window to be moving (reduced from 8)
+    const MIN_POINT_DISTANCE_M = 2; // Minimum distance between recorded points (reduced from 3)
+
     isTrackingRef.current = isTracking;
     pathRef.current = path;
     activityTypeRef.current = activityType;
     startTimeRef.current = trackingStartTime;
+
+    // Recording pulse animation
+    const pulseAnim = React.useRef(new Animated.Value(1)).current;
+
+    React.useEffect(() => {
+        if (isTracking) {
+            const pulse = Animated.loop(
+                Animated.sequence([
+                    Animated.timing(pulseAnim, {
+                        toValue: 0.4,
+                        duration: 800,
+                        easing: Easing.inOut(Easing.ease),
+                        useNativeDriver: true,
+                    }),
+                    Animated.timing(pulseAnim, {
+                        toValue: 1,
+                        duration: 800,
+                        easing: Easing.inOut(Easing.ease),
+                        useNativeDriver: true,
+                    }),
+                ])
+            );
+            pulse.start();
+            return () => pulse.stop();
+        } else {
+            pulseAnim.setValue(1);
+        }
+    }, [isTracking, pulseAnim]);
 
     React.useEffect(() => {
         const loadTerritories = async () => {
@@ -68,23 +104,107 @@ export default function GameScreen() {
                 unsubscribe = await LocationService.startTracking(
                     (point) => {
                         if (!mounted) return;
-                        console.log('Got location:', point.lat, point.lng);
                         setLocationError(null);
-                        setLocation(point);
-                        if (isTrackingRef.current) {
-                            setPath(prev => {
-                                const newPath = [...prev, point];
-                                try {
-                                    setArea(GameEngine.calculateArea(newPath));
-                                    // Calculate distance in real-time
-                                    const dist = ActivityService.calculateDistance(newPath);
-                                    setCurrentDistance(dist);
-                                } catch (calcErr) {
-                                    console.error('Area calculation error:', calcErr);
-                                }
-                                return newPath;
-                            });
+                        setLocation(point); // Always update visible location marker
+
+                        if (!isTrackingRef.current) return;
+
+                        // Step 5: Skip low-accuracy points from tracking path
+                        const MAX_ACCURACY_METERS = 50;
+                        if (point.accuracy !== null && point.accuracy > MAX_ACCURACY_METERS) {
+                            console.log('Skipping low-accuracy point:', point.accuracy, 'm');
+                            return;
                         }
+
+                        // Step 7: Advisory speed validation
+                        if (activityTypeRef.current && point.speed !== null) {
+                            const speedCheck = GameEngine.validateSpeed(point, activityTypeRef.current);
+                            if (!speedCheck.valid) {
+                                console.warn('Speed anomaly:', speedCheck.reason,
+                                    `(${point.speed?.toFixed(1)} m/s for ${activityTypeRef.current})`);
+                            }
+                        }
+
+                        // GPS Jitter/Stillness Detection
+                        const now = Date.now();
+                        const currentPos = { lat: point.lat, lng: point.lng, time: now };
+
+                        // Add to recent positions and clean up old entries
+                        recentPositionsRef.current.push(currentPos);
+                        recentPositionsRef.current = recentPositionsRef.current.filter(
+                            p => now - p.time < STILLNESS_WINDOW_MS
+                        );
+
+                        // If speed is reported and reasonably high, always record the point
+                        // (speeds above 0.8 m/s = ~2.9 km/h indicate definite movement)
+                        if (point.speed !== null && point.speed >= 0.8) {
+                            // User is definitely moving, skip stillness check
+                        } else if (recentPositionsRef.current.length > 1) {
+                            // Check if user is actually moving by looking at max displacement in window
+                            const oldest = recentPositionsRef.current[0];
+                            let maxDisplacement = 0;
+                            for (const pos of recentPositionsRef.current) {
+                                try {
+                                    const d = getDistance(
+                                        { latitude: oldest.lat, longitude: oldest.lng },
+                                        { latitude: pos.lat, longitude: pos.lng }
+                                    );
+                                    if (d > maxDisplacement) maxDisplacement = d;
+                                } catch { /* ignore */ }
+                            }
+
+                            // If user hasn't moved much in the window AND has low/no speed, they're stationary
+                            if (maxDisplacement < STILLNESS_THRESHOLD_M) {
+                                // Low displacement - check speed as secondary indicator
+                                if (point.speed === null || point.speed < 0.3) {
+                                    // User is likely standing still, skip this point
+                                    return;
+                                }
+                            }
+                        }
+
+                        setPath(prev => {
+                            // Skip if too close to last recorded point (GPS jitter filter)
+                            if (prev.length > 0) {
+                                const last = prev[prev.length - 1];
+                                try {
+                                    const d = getDistance(
+                                        { latitude: last.lat, longitude: last.lng },
+                                        { latitude: point.lat, longitude: point.lng }
+                                    );
+                                    if (d < MIN_POINT_DISTANCE_M) {
+                                        // Point too close, skip but don't log to reduce noise
+                                        return prev;
+                                    }
+                                } catch { /* add point on error */ }
+                            }
+
+                            const newPath = [...prev, point];
+
+                            // Log path growth for debugging (every 5 points to reduce noise)
+                            if (newPath.length % 5 === 1 || newPath.length <= 3) {
+                                console.log(`Tracking: ${newPath.length} points, speed: ${point.speed?.toFixed(1) ?? 'N/A'} m/s`);
+                            }
+
+                            try {
+                                // Incremental distance calculation
+                                if (prev.length > 0) {
+                                    const lastPoint = prev[prev.length - 1];
+                                    const segDist = getDistance(
+                                        { latitude: lastPoint.lat, longitude: lastPoint.lng },
+                                        { latitude: point.lat, longitude: point.lng }
+                                    );
+                                    if (segDist > 0 && segDist < 1000) {
+                                        runningDistanceRef.current += segDist;
+                                    }
+                                }
+                                setCurrentDistance(runningDistanceRef.current);
+
+                            } catch (calcErr) {
+                                console.error('Calculation error:', calcErr);
+                            }
+                            return newPath;
+                        });
                     },
                     (error) => {
                         if (!mounted) return;
@@ -188,17 +308,35 @@ export default function GameScreen() {
         }
 
         if (isTracking) {
-            // Capture current state before any updates
-            const currentPath = [...pathRef.current]; // Clone to avoid mutation
-            const currentArea = area;
+            // CRITICAL: Stop accepting GPS points BEFORE cloning the path.
+            // The location callback (line 74) checks isTrackingRef.current,
+            // so setting it false here prevents new points from arriving
+            // between the clone and the state update.
+            isTrackingRef.current = false;
+            setIsTracking(false);
+            setIsSaving(true);
+
+            // Now safe to snapshot — no new points can be added to pathRef
+            const currentPath = [...pathRef.current];
             const currentActivityType = activityTypeRef.current;
             const startTime = startTimeRef.current || Date.now();
             const endTime = Date.now();
 
-            setIsTracking(false);
-            setIsSaving(true);
-
             // Always save the activity, regardless of loop closure
+            // Use a timeout to prevent hanging forever
+            const SAVE_TIMEOUT_MS = 20000; // 20 seconds max for entire save operation
+            const saveTimeout = setTimeout(() => {
+                console.error('Save operation timed out after 20 seconds');
+                setIsSaving(false);
+                setPath([]);
+                setActivityType(null);
+                setTrackingStartTime(null);
+                setCurrentDistance(0);
+                setElapsedTime(0);
+                setCurrentSpeed(0);
+                Alert.alert("Save Timeout", "Activity save took too long. Please check your connection and try again.");
+            }, SAVE_TIMEOUT_MS);
+
             try {
                 const { data: { session } } = await supabase.auth.getSession();
                 const userId = session?.user?.id || 'anonymous';
@@ -208,6 +346,10 @@ export default function GameScreen() {
                 const distance = ActivityService.calculateDistance(currentPath);
                 const duration = Math.round((endTime - startTime) / 1000);
                 const averageSpeed = ActivityService.calculateAverageSpeed(currentPath);
+
+                // Recalculate area from the final path rather than using the
+                // throttled state value, which may be stale by up to 4 points.
+                const currentArea = GameEngine.calculateArea(currentPath);
 
                 let savedTerritory: Territory | null = null;
                 const { isClosed } = GameEngine.checkLoopClosure(currentPath);
@@ -288,17 +430,20 @@ export default function GameScreen() {
                 console.error('Failed to save activity:', err);
                 Alert.alert("Error", "Failed to save activity. Please try again.");
             } finally {
+                clearTimeout(saveTimeout);
                 setIsSaving(false);
-            }
 
-            // Reset state immediately (no setTimeout to avoid race conditions)
-            setPath([]);
-            setArea(0);
-            setActivityType(null);
-            setTrackingStartTime(null);
-            setCurrentDistance(0);
-            setElapsedTime(0);
-            setCurrentSpeed(0);
+                // Reset tracking state after save completes (success or failure)
+                setPath([]);
+                pathRef.current = []; // Also reset the ref
+                runningDistanceRef.current = 0;
+                recentPositionsRef.current = [];
+                setActivityType(null);
+                setTrackingStartTime(null);
+                setCurrentDistance(0);
+                setElapsedTime(0);
+                setCurrentSpeed(0);
+            }
         } else {
             setShowActivityPicker(true);
         }
@@ -307,15 +452,21 @@ export default function GameScreen() {
     const startTracking = (type: ActivityType) => {
         // Reset all tracking state before starting
         setPath([]);
-        setArea(0);
         setCurrentDistance(0);
         setElapsedTime(0);
         setCurrentSpeed(0);
+        runningDistanceRef.current = 0;
+        recentPositionsRef.current = []; // Reset stillness detection
 
         // Set new tracking session
         setActivityType(type);
         setTrackingStartTime(Date.now());
         setShowActivityPicker(false);
+
+        // Set ref immediately so the location callback starts collecting
+        // points without waiting for the next React render (mirrors the
+        // symmetric isTrackingRef.current = false in handleStartPress).
+        isTrackingRef.current = true;
         setIsTracking(true);
 
         console.log('Started tracking:', type, 'at', new Date().toISOString());
@@ -323,7 +474,7 @@ export default function GameScreen() {
 
     return (
         <View style={styles.container}>
-            <MapContainer location={location} path={path} territories={savedTerritories} style={styles.map} />
+            <MapContainer ref={mapRef} location={location} path={path} territories={savedTerritories} style={styles.map} />
 
             {locationError && (
                 <View style={styles.errorOverlay}>
@@ -342,10 +493,13 @@ export default function GameScreen() {
                         <User color="#fff" size={24} />
                     </TouchableOpacity>
 
-                    <View style={styles.statsContainer}>
+                    <View style={[styles.statsContainer, isTracking && styles.statsContainerActive]}>
                         {isTracking ? (
                             <>
-                                <Text style={styles.statsLabel}>{activityType || 'ACTIVITY'}</Text>
+                                <View style={styles.trackingHeader}>
+                                    <Animated.View style={[styles.recordingDot, { opacity: pulseAnim }]} />
+                                    <Text style={styles.statsLabel}>{activityType || 'ACTIVITY'}</Text>
+                                </View>
                                 <Text style={styles.statsValue}>
                                     {(currentDistance / 1000).toFixed(2)} km
                                 </Text>
@@ -367,13 +521,14 @@ export default function GameScreen() {
                         )}
                     </View>
 
-                    <TouchableOpacity style={styles.iconButton}>
-                        <Layers color="#fff" size={24} />
-                    </TouchableOpacity>
+                    <View style={{ width: 48 }} />
                 </View>
 
                 <View style={styles.bottomControls} pointerEvents="box-none">
-                    <TouchableOpacity style={styles.centerButton}>
+                    <TouchableOpacity
+                        style={styles.centerButton}
+                        onPress={() => mapRef.current?.centerOnUser()}
+                    >
                         <Crosshair color="#fff" size={24} />
                     </TouchableOpacity>
 
@@ -457,7 +612,7 @@ export default function GameScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#000',
+        backgroundColor: '#0a0a0a',
     },
     map: {
         ...StyleSheet.absoluteFillObject,
@@ -467,19 +622,19 @@ const styles = StyleSheet.create({
         top: '40%',
         left: 20,
         right: 20,
-        backgroundColor: 'rgba(0,0,0,0.95)',
-        borderRadius: 16,
-        padding: 24,
+        backgroundColor: 'rgba(10,10,10,0.98)',
+        borderRadius: 20,
+        padding: 28,
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(239, 68, 68, 0.3)',
+        borderColor: 'rgba(239, 68, 68, 0.4)',
         zIndex: 1000,
     },
     errorText: {
         color: '#ef4444',
-        fontSize: 16,
+        fontSize: 17,
         fontWeight: 'bold',
-        marginTop: 12,
+        marginTop: 14,
         textAlign: 'center',
     },
     errorHint: {
@@ -500,106 +655,127 @@ const styles = StyleSheet.create({
         paddingTop: 8,
     },
     iconButton: {
-        width: 48,
-        height: 48,
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        borderRadius: 24,
+        width: 50,
+        height: 50,
+        backgroundColor: 'rgba(10,10,10,0.75)',
+        borderRadius: 25,
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
+        borderColor: 'rgba(255,255,255,0.12)',
     },
     statsContainer: {
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
+        backgroundColor: 'rgba(10,10,10,0.8)',
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 24,
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(34, 211, 238, 0.3)',
+        borderColor: 'rgba(34, 211, 238, 0.35)',
+        minWidth: 160,
+    },
+    statsContainerActive: {
+        borderColor: 'rgba(239, 68, 68, 0.5)',
+        backgroundColor: 'rgba(10,10,10,0.85)',
+    },
+    trackingHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    recordingDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: '#ef4444',
     },
     statsLabel: {
         fontSize: 10,
         color: '#22d3ee',
         fontWeight: 'bold',
-        letterSpacing: 1,
+        letterSpacing: 1.2,
+        textTransform: 'uppercase',
     },
     statsValue: {
-        fontSize: 18,
+        fontSize: 22,
         color: '#fff',
         fontWeight: 'bold',
+        marginTop: 2,
     },
     statsRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginTop: 2,
+        marginTop: 4,
     },
     statsSecondary: {
-        fontSize: 12,
+        fontSize: 13,
         color: '#a1a1aa',
+        fontWeight: '500',
     },
     statsDivider: {
-        fontSize: 12,
+        fontSize: 13,
         color: '#52525b',
-        marginHorizontal: 6,
+        marginHorizontal: 8,
     },
     bottomControls: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 12,
-        marginBottom: 24,
+        marginBottom: 20,
     },
     centerButton: {
-        width: 56,
-        height: 56,
-        backgroundColor: 'rgba(0,0,0,0.6)',
-        borderRadius: 28,
+        width: 54,
+        height: 54,
+        backgroundColor: 'rgba(10,10,10,0.75)',
+        borderRadius: 27,
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
+        borderColor: 'rgba(255,255,255,0.12)',
     },
     startButton: {
         flex: 1,
-        height: 56,
+        height: 58,
         backgroundColor: '#22d3ee',
-        borderRadius: 28,
+        borderRadius: 29,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 8,
+        gap: 10,
     },
     stopButton: {
         backgroundColor: '#ef4444',
     },
     savingButton: {
-        backgroundColor: '#71717a',
-        opacity: 0.8,
+        backgroundColor: '#52525b',
     },
     startButtonText: {
         color: '#000',
         fontSize: 16,
-        fontWeight: '900',
-        letterSpacing: 1,
+        fontWeight: '800',
+        letterSpacing: 0.8,
     },
     stopButtonText: {
         color: '#fff',
     },
     modalOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.8)',
+        backgroundColor: 'rgba(0,0,0,0.85)',
         justifyContent: 'flex-end',
     },
     modalContent: {
-        backgroundColor: '#1a1a1a',
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
+        backgroundColor: '#141414',
+        borderTopLeftRadius: 28,
+        borderTopRightRadius: 28,
         padding: 24,
-        paddingBottom: 40,
+        paddingBottom: 44,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.06)',
+        borderBottomWidth: 0,
     },
     modalTitle: {
         color: '#fff',
-        fontSize: 20,
+        fontSize: 22,
         fontWeight: 'bold',
         textAlign: 'center',
         marginBottom: 24,
@@ -607,12 +783,12 @@ const styles = StyleSheet.create({
     activityOption: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(34, 211, 238, 0.1)',
-        borderRadius: 16,
-        padding: 16,
+        backgroundColor: 'rgba(34, 211, 238, 0.08)',
+        borderRadius: 18,
+        padding: 18,
         marginBottom: 12,
         borderWidth: 1,
-        borderColor: 'rgba(34, 211, 238, 0.3)',
+        borderColor: 'rgba(34, 211, 238, 0.25)',
         gap: 16,
     },
     activityText: {
@@ -621,12 +797,13 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     cancelButton: {
-        marginTop: 8,
+        marginTop: 12,
         padding: 16,
         alignItems: 'center',
     },
     cancelText: {
-        color: '#888',
+        color: '#71717a',
         fontSize: 16,
+        fontWeight: '500',
     },
 });
