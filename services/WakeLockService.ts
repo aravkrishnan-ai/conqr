@@ -69,7 +69,7 @@ export const WakeLockService = {
                     if (this.releaseHandler) {
                         try {
                             this.wakeLock.removeEventListener('release', this.releaseHandler);
-                        } catch (e) {
+                        } catch {
                             // Ignore errors removing listener
                         }
                         this.releaseHandler = null;
@@ -77,7 +77,7 @@ export const WakeLockService = {
 
                     try {
                         await this.wakeLock.release();
-                    } catch (e) {
+                    } catch {
                         // Ignore errors if already released
                     }
                     this.wakeLock = null;

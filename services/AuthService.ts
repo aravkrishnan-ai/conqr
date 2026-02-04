@@ -1,13 +1,17 @@
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { makeRedirectUri } from 'expo-auth-session';
-import { Platform, Alert } from 'react-native';
+import { Alert } from 'react-native';
 import { db } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { UserProfile } from '../lib/types';
-import { v4 as uuidv4 } from 'uuid';
 
-WebBrowser.maybeCompleteAuthSession();
+
+try {
+    WebBrowser.maybeCompleteAuthSession();
+} catch {
+    // Safe to ignore — not available on all platforms (e.g. web)
+}
 
 const extractParamsFromUrl = (url: string) => {
     const params: Record<string, string> = {};
@@ -36,6 +40,45 @@ const extractParamsFromUrl = (url: string) => {
         errorCode: errorCodeMatch ? decodeURIComponent(errorCodeMatch[1]) : null,
         errorDescription: errorMatch ? decodeURIComponent(errorMatch[1].replace(/\+/g, ' ')) : null,
     };
+};
+
+/**
+ * Handle an auth callback URL by extracting tokens and setting the Supabase session.
+ * Used by both the openAuthSessionAsync return and the Linking URL listener.
+ */
+export const handleAuthCallbackUrl = async (url: string): Promise<boolean> => {
+    console.log('Handling auth callback URL:', url);
+    const { params, errorCode, errorDescription } = extractParamsFromUrl(url);
+
+    console.log('Parsed params:', Object.keys(params));
+
+    if (errorCode) {
+        console.error('OAuth error:', errorCode, errorDescription);
+        Alert.alert('OAuth Error', errorDescription || errorCode);
+        return false;
+    }
+
+    const { access_token, refresh_token } = params;
+    console.log('Got tokens:', { hasAccess: !!access_token, hasRefresh: !!refresh_token });
+
+    if (access_token && refresh_token) {
+        const { error: sessionError } = await supabase.auth.setSession({
+            access_token,
+            refresh_token,
+        });
+
+        if (sessionError) {
+            console.error('Session error:', sessionError);
+            Alert.alert('Session Error', sessionError.message || 'Failed to save session');
+            return false;
+        }
+
+        console.log('Session set successfully');
+        return true;
+    }
+
+    console.error('Missing tokens in callback URL');
+    return false;
 };
 
 export const AuthService = {
@@ -68,9 +111,13 @@ export const AuthService = {
     },
 
     async signInWithGoogle() {
-        // Create proper redirect URI for the app scheme
-        // Force the scheme-based redirect for native apps
-        const redirectUrl = 'conqr://auth/callback';
+        // Generate the correct redirect URI for the current environment
+        // - Expo Go: exp://192.168.x.x:8081/--/auth/callback
+        // - Dev build / standalone: conqr://auth/callback
+        const redirectUrl = makeRedirectUri({
+            scheme: 'conqr',
+            path: 'auth/callback',
+        });
 
         console.log('OAuth redirect URL:', redirectUrl);
 
@@ -96,6 +143,23 @@ export const AuthService = {
 
         console.log('Opening auth URL:', data.url);
 
+        // Set up a Linking listener BEFORE opening the browser.
+        // On Android in Expo Go, openAuthSessionAsync may not catch the
+        // exp:// redirect — Android handles it as a deep link intent that
+        // reopens Expo Go directly. The Linking listener catches it instead.
+        let handled = false;
+        const linkingPromise = new Promise<string | null>((resolve) => {
+            const sub = Linking.addEventListener('url', (event) => {
+                console.log('Linking event received:', event.url);
+                if (event.url.includes('access_token') || event.url.includes('error')) {
+                    sub.remove();
+                    resolve(event.url);
+                }
+            });
+            // Clean up listener after 2 minutes (timeout)
+            setTimeout(() => { sub.remove(); resolve(null); }, 120000);
+        });
+
         let res;
         try {
             res = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
@@ -107,79 +171,39 @@ export const AuthService = {
 
         console.log('Auth session result:', res.type);
 
+        // Try the openAuthSessionAsync result first
+        if (res.type === 'success' && res.url) {
+            handled = true;
+            await handleAuthCallbackUrl(res.url);
+        }
+
         if (res.type === 'cancel') {
             console.log('User cancelled sign in');
             return;
         }
 
-        if (res.type === 'success' && res.url) {
-            console.log('Auth callback URL:', res.url);
-            const { params, errorCode, errorDescription } = extractParamsFromUrl(res.url);
-
-            console.log('Parsed params:', Object.keys(params));
-
-            if (errorCode) {
-                console.error('OAuth error:', errorCode, errorDescription);
-                Alert.alert('OAuth Error', errorDescription || errorCode);
-                throw new Error(errorDescription || errorCode);
-            }
-
-            const { access_token, refresh_token } = params;
-            console.log('Got tokens:', { hasAccess: !!access_token, hasRefresh: !!refresh_token });
-
-            if (access_token && refresh_token) {
-                const { error: sessionError } = await supabase.auth.setSession({
-                    access_token,
-                    refresh_token,
-                });
-
-                if (sessionError) {
-                    console.error('Session error:', sessionError);
-                    Alert.alert('Session Error', sessionError.message || 'Failed to save session');
-                    throw sessionError;
-                }
-
-                console.log('Session set successfully');
+        // If openAuthSessionAsync didn't return a success URL (common on Android
+        // in Expo Go), wait for the Linking listener to catch the redirect.
+        if (!handled && res.type === 'dismiss') {
+            console.log('Browser dismissed, checking Linking listener for callback...');
+            const callbackUrl = await linkingPromise;
+            if (callbackUrl) {
+                await handleAuthCallbackUrl(callbackUrl);
             } else {
-                console.error('Missing tokens in callback URL:', res.url);
-                Alert.alert('Sign In Error', 'Authentication incomplete - please try again');
+                console.log('No callback URL received');
             }
-        } else if (res.type === 'dismiss') {
-            console.log('Auth window dismissed');
         }
-    },
-
-    async signup(username: string, email?: string): Promise<UserProfile> {
-        // Legacy local signup, keeping for fallback
-        const existing = await db.users.where('username').equals(username).first();
-        if (existing) throw new Error('Username taken');
-
-        const newUser: UserProfile = {
-            id: uuidv4(),
-            username,
-            email,
-            createdAt: Date.now(),
-            bio: ''
-        };
-
-        await db.users.add(newUser);
-        return newUser;
     },
 
     async updateProfile(updates: Partial<UserProfile>) {
-        // Get user ID from local or generate one
-        let userId: string;
-        let userEmail: string | undefined;
-        let avatarUrl: string | undefined;
-
-        try {
-            const { data: { session } } = await supabase.auth.getSession();
-            userId = session?.user?.id || uuidv4();
-            userEmail = session?.user?.email;
-            avatarUrl = session?.user?.user_metadata?.avatar_url;
-        } catch {
-            userId = uuidv4();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) {
+            throw new Error('Must be signed in to update profile');
         }
+
+        const userId = session.user.id;
+        const userEmail = session.user.email;
+        const avatarUrl = session.user.user_metadata?.avatar_url;
 
         // Save locally FIRST (offline-first)
         const profile: UserProfile = {

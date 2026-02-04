@@ -3,6 +3,15 @@ import { supabase } from '../lib/supabase';
 import { db } from '../lib/db';
 import { getDistance } from 'geolib';
 
+// Timeout helper for async operations
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, errorMsg: string): Promise<T> => {
+    let timeoutId: NodeJS.Timeout;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(errorMsg)), timeoutMs);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+};
+
 // Minimum requirements for a valid activity
 const MIN_DISTANCE_METERS = 10; // Must move at least 10 meters
 const MIN_DURATION_SECONDS = 5; // Must be at least 5 seconds
@@ -16,29 +25,34 @@ export const ActivityService = {
         if (!Array.isArray(path) || path.length < 2) return 0;
 
         let totalDistance = 0;
-        for (let i = 1; i < path.length; i++) {
-            const prev = path[i - 1];
-            const curr = path[i];
+        let lastValid: GPSPoint | null = null;
 
-            // Validate coordinates exist
-            if (!prev || !curr ||
-                typeof prev.lat !== 'number' || typeof prev.lng !== 'number' ||
-                typeof curr.lat !== 'number' || typeof curr.lng !== 'number') {
+        for (let i = 0; i < path.length; i++) {
+            const point = path[i];
+
+            // Validate coordinates exist and are real numbers (not NaN)
+            if (!point ||
+                typeof point.lat !== 'number' || typeof point.lng !== 'number' ||
+                isNaN(point.lat) || isNaN(point.lng)) {
                 continue;
             }
 
-            try {
-                const dist = getDistance(
-                    { latitude: prev.lat, longitude: prev.lng },
-                    { latitude: curr.lat, longitude: curr.lng }
-                );
-                // Sanity check - skip unrealistic distances (> 1km in one segment = likely GPS error)
-                if (dist > 0 && dist < 1000) {
-                    totalDistance += dist;
+            if (lastValid) {
+                try {
+                    const dist = getDistance(
+                        { latitude: lastValid.lat, longitude: lastValid.lng },
+                        { latitude: point.lat, longitude: point.lng }
+                    );
+                    // Sanity check - skip unrealistic distances (> 1km in one segment = likely GPS error)
+                    if (dist > 0 && dist < 1000) {
+                        totalDistance += dist;
+                    }
+                } catch (err) {
+                    console.error('Error calculating distance between points:', err);
                 }
-            } catch (err) {
-                console.error('Error calculating distance between points:', err);
             }
+
+            lastValid = point;
         }
         return totalDistance;
     },
@@ -144,6 +158,9 @@ export const ActivityService = {
      * Returns null if activity doesn't meet minimum requirements
      */
     async saveActivity(activity: Activity): Promise<Activity | null> {
+        const SAVE_TIMEOUT_MS = 10000; // 10 second timeout for save operations
+        const SYNC_TIMEOUT_MS = 15000; // 15 second timeout for cloud sync
+
         // Validate activity meets minimum requirements
         if (!this.isValidActivity(activity)) {
             console.log('Activity does not meet minimum requirements, skipping save:', {
@@ -155,45 +172,75 @@ export const ActivityService = {
             return null;
         }
 
-        // Save to local db first (offline-first)
-        await db.activities.put(activity);
-        console.log('Activity saved locally:', activity.id);
-
-        // Sync to Supabase in background
+        // Save to local db first (offline-first) with timeout
         try {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session?.user) {
-                console.log('No session, activity saved locally only');
-                return activity;
-            }
-
-            const { error } = await supabase
-                .from('activities')
-                .upsert({
-                    id: activity.id,
-                    user_id: activity.userId,
-                    type: activity.type,
-                    start_time: new Date(activity.startTime).toISOString(),
-                    end_time: activity.endTime ? new Date(activity.endTime).toISOString() : null,
-                    distance: activity.distance,
-                    duration: activity.duration,
-                    polylines: JSON.stringify(activity.polylines),
-                    is_synced: true,
-                    territory_id: activity.territoryId || null,
-                    average_speed: activity.averageSpeed || null
-                });
-
-            if (error) {
-                console.error('Failed to sync activity to cloud:', error);
-                // Mark as not synced in local db
-                await db.activities.update(activity.id, { isSynced: false });
-            } else {
-                console.log('Activity synced to cloud:', activity.id);
-                await db.activities.update(activity.id, { isSynced: true });
-            }
-        } catch (err) {
-            console.error('Activity sync error:', err);
+            await withTimeout(
+                db.activities.put(activity),
+                SAVE_TIMEOUT_MS,
+                'Local save timed out'
+            );
+            console.log('Activity saved locally:', activity.id);
+        } catch (localErr) {
+            console.error('Failed to save activity locally:', localErr);
+            // Return the activity anyway - don't block the UI
+            // The activity data is still in memory, user can try again
+            throw localErr; // Re-throw to signal save failed
         }
+
+        // Sync to Supabase in background (non-blocking)
+        // Use setTimeout to make this truly non-blocking
+        setTimeout(async () => {
+            try {
+                const sessionPromise = supabase.auth.getSession();
+                const { data: { session } } = await withTimeout(
+                    sessionPromise,
+                    5000,
+                    'Session check timed out'
+                );
+
+                if (!session?.user) {
+                    console.log('No session, activity saved locally only');
+                    return;
+                }
+
+                const syncOperation = async () => {
+                    return await supabase
+                        .from('activities')
+                        .upsert({
+                            id: activity.id,
+                            user_id: activity.userId,
+                            type: activity.type,
+                            start_time: new Date(activity.startTime).toISOString(),
+                            end_time: activity.endTime ? new Date(activity.endTime).toISOString() : null,
+                            distance: activity.distance,
+                            duration: activity.duration,
+                            polylines: JSON.stringify(activity.polylines),
+                            is_synced: true,
+                            territory_id: activity.territoryId || null,
+                            average_speed: activity.averageSpeed ?? null
+                        });
+                };
+
+                const { error } = await withTimeout(
+                    syncOperation(),
+                    SYNC_TIMEOUT_MS,
+                    'Cloud sync timed out'
+                );
+
+                if (error) {
+                    console.error('Failed to sync activity to cloud:', error);
+                    // Mark as not synced in local db
+                    await db.activities.update(activity.id, { isSynced: false }).catch(() => {});
+                } else {
+                    console.log('Activity synced to cloud:', activity.id);
+                    await db.activities.update(activity.id, { isSynced: true }).catch(() => {});
+                }
+            } catch (err) {
+                console.error('Activity sync error:', err);
+                // Mark as not synced
+                await db.activities.update(activity.id, { isSynced: false }).catch(() => {});
+            }
+        }, 0);
 
         return activity;
     },
@@ -259,9 +306,12 @@ export const ActivityService = {
                     averageSpeed: a.average_speed || undefined
                 }));
 
-                // Merge cloud activities into local db (fire and forget to avoid blocking)
-                Promise.all(cloudActivities.map(activity => db.activities.put(activity)))
-                    .catch(err => console.error('Failed to cache cloud activities locally:', err));
+                // Cache cloud activities locally using a single bulk write
+                try {
+                    await db.activities.bulkPut(cloudActivities);
+                } catch (err) {
+                    console.error('Failed to cache cloud activities locally:', err);
+                }
 
                 // Merge local unsynced activities with cloud activities
                 const cloudIds = new Set(cloudActivities.map(a => a.id));
@@ -339,7 +389,7 @@ export const ActivityService = {
                         polylines: JSON.stringify(activity.polylines),
                         is_synced: true,
                         territory_id: activity.territoryId || null,
-                        average_speed: activity.averageSpeed || null
+                        average_speed: activity.averageSpeed ?? null
                     });
 
                 if (!error) {

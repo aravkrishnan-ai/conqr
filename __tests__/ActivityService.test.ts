@@ -422,6 +422,84 @@ describe('ActivityService', () => {
     });
   });
 
+  describe('getActivity', () => {
+    it('should return an activity by id', async () => {
+      const activity: Activity = {
+        id: 'get-test-1',
+        userId: 'user-1',
+        type: 'RUN',
+        startTime: Date.now(),
+        distance: 300,
+        duration: 90,
+        polylines: [createPath(3)],
+        isSynced: false,
+      };
+      await db.activities.put(activity);
+
+      const result = await ActivityService.getActivity('get-test-1');
+      expect(result).not.toBeNull();
+      expect(result?.id).toBe('get-test-1');
+      expect(result?.type).toBe('RUN');
+    });
+
+    it('should return null for non-existent id', async () => {
+      const result = await ActivityService.getActivity('does-not-exist');
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('syncPendingActivities', () => {
+    it('should sync unsynced activities and return count', async () => {
+      // Insert two unsynced activities
+      await db.activities.put({
+        id: 'sync-1',
+        userId: 'user-1',
+        type: 'WALK',
+        startTime: Date.now() - 60000,
+        distance: 100,
+        duration: 60,
+        polylines: [],
+        isSynced: false,
+      } as Activity);
+      await db.activities.put({
+        id: 'sync-2',
+        userId: 'user-1',
+        type: 'RUN',
+        startTime: Date.now() - 30000,
+        distance: 200,
+        duration: 120,
+        polylines: [],
+        isSynced: false,
+      } as Activity);
+
+      const count = await ActivityService.syncPendingActivities();
+      expect(count).toBe(2);
+
+      // Verify they are now marked as synced
+      const a1 = await db.activities.get('sync-1');
+      const a2 = await db.activities.get('sync-2');
+      expect(a1?.isSynced).toBe(true);
+      expect(a2?.isSynced).toBe(true);
+    });
+
+    it('should return 0 when nothing to sync', async () => {
+      // Insert an already-synced activity
+      await db.activities.put({
+        id: 'already-synced',
+        userId: 'user-1',
+        type: 'WALK',
+        startTime: Date.now(),
+        distance: 100,
+        duration: 60,
+        polylines: [],
+        isSynced: true,
+      } as Activity);
+
+      const count = await ActivityService.syncPendingActivities();
+      expect(count).toBe(0);
+    });
+  });
+
   describe('_parsePolylines', () => {
     it('should return empty array for null', () => {
       expect(ActivityService._parsePolylines(null)).toEqual([]);

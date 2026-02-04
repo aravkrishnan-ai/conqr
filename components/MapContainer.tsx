@@ -227,7 +227,7 @@ function MapContainerComponent({ location, path, territories = [], style }: MapC
         .user-marker {
             width: 20px;
             height: 20px;
-            background: #22d3ee;
+            background: #FC4C02;
             border-radius: 50%;
             border: 3px solid #fff;
             box-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
@@ -275,7 +275,7 @@ function MapContainerComponent({ location, path, territories = [], style }: MapC
             width: 40px;
             height: 40px;
             border: 3px solid rgba(34, 211, 238, 0.2);
-            border-top-color: #22d3ee;
+            border-top-color: #FC4C02;
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
@@ -391,7 +391,7 @@ function MapContainerComponent({ location, path, territories = [], style }: MapC
                     pathLine.setLatLngs(coords);
                 } else {
                     pathLine = L.polyline(coords, {
-                        color: '#22d3ee',
+                        color: '#FC4C02',
                         weight: 4,
                         opacity: 0.9,
                         lineJoin: 'round',
@@ -436,10 +436,10 @@ function MapContainerComponent({ location, path, territories = [], style }: MapC
             territories.forEach(function(territory) {
                 if (territory.polygon && territory.polygon.length > 2) {
                     var polygon = L.polygon(territory.polygon, {
-                        color: '#22d3ee',
+                        color: '#FC4C02',
                         weight: 2,
                         opacity: 0.8,
-                        fillColor: '#22d3ee',
+                        fillColor: '#FC4C02',
                         fillOpacity: 0.2
                     }).addTo(map);
                     territoryLayers.push(polygon);
@@ -549,7 +549,7 @@ function MapContainerComponent({ location, path, territories = [], style }: MapC
             />
             {isLoading && (
                 <View style={styles.loadingOverlay}>
-                    <ActivityIndicator size="large" color="#22d3ee" />
+                    <ActivityIndicator size="large" color="#FC4C02" />
                     <Text style={styles.loadingText}>Loading map...</Text>
                 </View>
             )}

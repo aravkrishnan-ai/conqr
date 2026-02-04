@@ -34,10 +34,12 @@ export const GameEngine = {
         const start = path[0];
         const end = path[path.length - 1];
 
-        // Validate start and end points
+        // Validate start and end points (NaN is typeof 'number', so check explicitly)
         if (!start || !end ||
             typeof start.lat !== 'number' || typeof start.lng !== 'number' ||
-            typeof end.lat !== 'number' || typeof end.lng !== 'number') {
+            typeof end.lat !== 'number' || typeof end.lng !== 'number' ||
+            isNaN(start.lat) || isNaN(start.lng) ||
+            isNaN(end.lat) || isNaN(end.lng)) {
             return { isClosed: false, distance: Infinity };
         }
 

@@ -133,9 +133,12 @@ export const TerritoryService = {
                     .map(mapCloudTerritory)
                     .filter((t): t is Territory => t !== null);
 
-                // Cache to local db (fire and forget)
-                Promise.all(cloudTerritories.map(t => db.territories.put(t)))
-                    .catch(err => console.error('Failed to cache territories locally:', err));
+                // Cache cloud territories locally using a single bulk write
+                try {
+                    await db.territories.bulkPut(cloudTerritories);
+                } catch (err) {
+                    console.error('Failed to cache territories locally:', err);
+                }
 
                 return cloudTerritories;
             }

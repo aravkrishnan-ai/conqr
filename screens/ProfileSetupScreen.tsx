@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -7,20 +7,26 @@ import {
     TouchableOpacity,
     KeyboardAvoidingView,
     Platform,
-    ScrollView,
     Alert,
-    ActivityIndicator
+    ActivityIndicator,
+    Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { User, AlignLeft, Check } from 'lucide-react-native';
+import { User, Check, Sparkles } from 'lucide-react-native';
 import { AuthService } from '../services/AuthService';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function ProfileSetupScreen() {
-    const { setHasProfile } = useAuth();
+    const { setHasProfile, suggestedUsername, userAvatarUrl } = useAuth();
     const [username, setUsername] = useState('');
-    const [bio, setBio] = useState('');
     const [loading, setLoading] = useState(false);
+
+    // Pre-fill username from Google profile
+    useEffect(() => {
+        if (suggestedUsername && !username) {
+            setUsername(suggestedUsername);
+        }
+    }, [suggestedUsername]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleSave = async () => {
         if (!username.trim()) {
@@ -28,20 +34,16 @@ export default function ProfileSetupScreen() {
             return;
         }
 
-        if (username.length < 3) {
+        if (username.trim().length < 3) {
             Alert.alert('Error', 'Username must be at least 3 characters');
             return;
         }
 
         setLoading(true);
         try {
-            // Save profile (local-first, instant)
             await AuthService.updateProfile({
                 username: username.trim(),
-                bio: bio.trim(),
             });
-
-            // Update app state to show Game screen
             setHasProfile(true);
         } catch (error: any) {
             console.error('Save profile error:', error);
@@ -54,64 +56,61 @@ export default function ProfileSetupScreen() {
         <SafeAreaView style={styles.container}>
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={{ flex: 1 }}
+                style={styles.keyboardView}
             >
-                <ScrollView contentContainerStyle={styles.scrollContent}>
-                    <View style={styles.header}>
-                        <Text style={styles.title}>Finish your profile</Text>
-                        <Text style={styles.subtitle}>Tell the world who is conquering their streets!</Text>
+                <View style={styles.content}>
+                    {/* Avatar preview */}
+                    <View style={styles.avatarSection}>
+                        {userAvatarUrl ? (
+                            <Image source={{ uri: userAvatarUrl }} style={styles.avatar} />
+                        ) : (
+                            <View style={styles.avatarPlaceholder}>
+                                <User color="#22d3ee" size={36} />
+                            </View>
+                        )}
                     </View>
 
-                    <View style={styles.form}>
-                        <View style={styles.inputGroup}>
-                            <View style={styles.labelContainer}>
-                                <User color="#22d3ee" size={16} />
-                                <Text style={styles.label}>USERNAME</Text>
-                            </View>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="e.g. StreetKing99"
-                                placeholderTextColor="#52525b"
-                                value={username}
-                                onChangeText={setUsername}
-                                autoCapitalize="none"
-                                autoCorrect={false}
-                            />
-                            <Text style={styles.hint}>This is how you'll appear on leaderboards.</Text>
-                        </View>
+                    <Text style={styles.title}>Choose your name</Text>
+                    <Text style={styles.subtitle}>{"This is how you'll appear on leaderboards"}</Text>
 
-                        <View style={styles.inputGroup}>
-                            <View style={styles.labelContainer}>
-                                <AlignLeft color="#22d3ee" size={16} />
-                                <Text style={styles.label}>BIO</Text>
-                            </View>
-                            <TextInput
-                                style={[styles.input, styles.textArea]}
-                                placeholder="I run for pizza and glory."
-                                placeholderTextColor="#52525b"
-                                value={bio}
-                                onChangeText={setBio}
-                                multiline
-                                numberOfLines={3}
-                            />
-                        </View>
-
-                        <TouchableOpacity
-                            style={[styles.saveButton, loading && styles.disabledButton]}
-                            onPress={handleSave}
-                            disabled={loading}
-                        >
-                            {loading ? (
-                                <ActivityIndicator color="#000" />
-                            ) : (
-                                <>
-                                    <Check color="#000" size={20} />
-                                    <Text style={styles.saveButtonText}>START CONQUERING</Text>
-                                </>
-                            )}
-                        </TouchableOpacity>
+                    <View style={styles.inputWrapper}>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Enter username"
+                            placeholderTextColor="#52525b"
+                            value={username}
+                            onChangeText={setUsername}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            autoFocus={!suggestedUsername}
+                            maxLength={24}
+                        />
+                        {suggestedUsername && username !== suggestedUsername && (
+                            <TouchableOpacity
+                                style={styles.suggestButton}
+                                onPress={() => setUsername(suggestedUsername)}
+                            >
+                                <Sparkles color="#22d3ee" size={14} />
+                                <Text style={styles.suggestText}>Use Google name</Text>
+                            </TouchableOpacity>
+                        )}
                     </View>
-                </ScrollView>
+
+                    <TouchableOpacity
+                        style={[styles.saveButton, loading && styles.disabledButton]}
+                        onPress={handleSave}
+                        disabled={loading}
+                    >
+                        {loading ? (
+                            <ActivityIndicator color="#000" />
+                        ) : (
+                            <>
+                                <Check color="#000" size={20} />
+                                <Text style={styles.saveButtonText}>START CONQUERING</Text>
+                            </>
+                        )}
+                    </TouchableOpacity>
+                </View>
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
@@ -122,42 +121,51 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#000',
     },
-    scrollContent: {
-        flexGrow: 1,
-        padding: 24,
+    keyboardView: {
+        flex: 1,
     },
-    header: {
-        marginBottom: 40,
-        marginTop: 20,
+    content: {
+        flex: 1,
+        padding: 24,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    avatarSection: {
+        marginBottom: 24,
+    },
+    avatar: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        borderWidth: 2,
+        borderColor: '#22d3ee',
+    },
+    avatarPlaceholder: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: '#22d3ee22',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 2,
+        borderColor: '#22d3ee44',
     },
     title: {
-        fontSize: 32,
+        fontSize: 28,
         fontWeight: '900',
         color: '#fff',
-        letterSpacing: -1,
+        letterSpacing: -0.5,
     },
     subtitle: {
-        fontSize: 16,
-        color: '#a1a1aa',
-        marginTop: 8,
-        lineHeight: 24,
+        fontSize: 15,
+        color: '#71717a',
+        marginTop: 6,
+        marginBottom: 32,
     },
-    form: {
-        gap: 32,
-    },
-    inputGroup: {
-        gap: 12,
-    },
-    labelContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    label: {
-        fontSize: 12,
-        fontWeight: 'bold',
-        color: '#22d3ee',
-        letterSpacing: 1,
+    inputWrapper: {
+        width: '100%',
+        maxWidth: 320,
+        marginBottom: 24,
     },
     input: {
         backgroundColor: '#18181b',
@@ -166,25 +174,32 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         padding: 16,
         color: '#fff',
-        fontSize: 16,
+        fontSize: 18,
+        textAlign: 'center',
     },
-    textArea: {
-        height: 100,
-        textAlignVertical: 'top',
+    suggestButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        marginTop: 10,
+        paddingVertical: 6,
     },
-    hint: {
-        fontSize: 12,
-        color: '#52525b',
+    suggestText: {
+        color: '#22d3ee',
+        fontSize: 13,
+        fontWeight: '500',
     },
     saveButton: {
         backgroundColor: '#22d3ee',
         borderRadius: 28,
         height: 56,
+        width: '100%',
+        maxWidth: 320,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 10,
-        marginTop: 20,
         shadowColor: '#22d3ee',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,

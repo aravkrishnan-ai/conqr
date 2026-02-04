@@ -576,7 +576,7 @@ export default function GameScreen() {
                             style={styles.activityOption}
                             onPress={() => startTracking('WALK')}
                         >
-                            <Footprints color="#22d3ee" size={32} />
+                            <Footprints color="#FC4C02" size={28} />
                             <Text style={styles.activityText}>Walk</Text>
                         </TouchableOpacity>
 
@@ -584,7 +584,7 @@ export default function GameScreen() {
                             style={styles.activityOption}
                             onPress={() => startTracking('RUN')}
                         >
-                            <PersonStanding color="#22d3ee" size={32} />
+                            <PersonStanding color="#FC4C02" size={28} />
                             <Text style={styles.activityText}>Run</Text>
                         </TouchableOpacity>
 
@@ -592,7 +592,7 @@ export default function GameScreen() {
                             style={styles.activityOption}
                             onPress={() => startTracking('RIDE')}
                         >
-                            <Bike color="#22d3ee" size={32} />
+                            <Bike color="#FC4C02" size={28} />
                             <Text style={styles.activityText}>Ride</Text>
                         </TouchableOpacity>
 
@@ -609,10 +609,17 @@ export default function GameScreen() {
     );
 }
 
+// Strava-inspired color palette
+const STRAVA_ORANGE = '#FC4C02';
+const STRAVA_ORANGE_DARK = '#E34402';
+const STRAVA_BG = '#121212';
+const STRAVA_CARD = '#1E1E1E';
+const STRAVA_BORDER = '#2D2D2D';
+
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#0a0a0a',
+        backgroundColor: STRAVA_BG,
     },
     map: {
         ...StyleSheet.absoluteFillObject,
@@ -622,23 +629,21 @@ const styles = StyleSheet.create({
         top: '40%',
         left: 20,
         right: 20,
-        backgroundColor: 'rgba(10,10,10,0.98)',
-        borderRadius: 20,
-        padding: 28,
+        backgroundColor: STRAVA_CARD,
+        borderRadius: 12,
+        padding: 24,
         alignItems: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(239, 68, 68, 0.4)',
         zIndex: 1000,
     },
     errorText: {
-        color: '#ef4444',
-        fontSize: 17,
-        fontWeight: 'bold',
-        marginTop: 14,
+        color: '#FF6B6B',
+        fontSize: 16,
+        fontWeight: '600',
+        marginTop: 12,
         textAlign: 'center',
     },
     errorHint: {
-        color: '#a1a1aa',
+        color: '#8E8E8E',
         fontSize: 14,
         marginTop: 8,
         textAlign: 'center',
@@ -655,154 +660,144 @@ const styles = StyleSheet.create({
         paddingTop: 8,
     },
     iconButton: {
-        width: 50,
-        height: 50,
-        backgroundColor: 'rgba(10,10,10,0.75)',
-        borderRadius: 25,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.12)',
-    },
-    statsContainer: {
-        backgroundColor: 'rgba(10,10,10,0.8)',
-        paddingHorizontal: 20,
-        paddingVertical: 10,
+        width: 48,
+        height: 48,
+        backgroundColor: 'rgba(30,30,30,0.9)',
         borderRadius: 24,
         alignItems: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(34, 211, 238, 0.35)',
-        minWidth: 160,
+        justifyContent: 'center',
+    },
+    statsContainer: {
+        backgroundColor: 'rgba(30,30,30,0.95)',
+        paddingHorizontal: 24,
+        paddingVertical: 12,
+        borderRadius: 12,
+        alignItems: 'center',
+        minWidth: 180,
     },
     statsContainerActive: {
-        borderColor: 'rgba(239, 68, 68, 0.5)',
-        backgroundColor: 'rgba(10,10,10,0.85)',
+        backgroundColor: 'rgba(30,30,30,0.98)',
     },
     trackingHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
+        gap: 8,
     },
     recordingDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: '#ef4444',
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: STRAVA_ORANGE,
     },
     statsLabel: {
-        fontSize: 10,
-        color: '#22d3ee',
-        fontWeight: 'bold',
-        letterSpacing: 1.2,
+        fontSize: 11,
+        color: '#8E8E8E',
+        fontWeight: '600',
+        letterSpacing: 1,
         textTransform: 'uppercase',
     },
     statsValue: {
-        fontSize: 22,
-        color: '#fff',
-        fontWeight: 'bold',
+        fontSize: 32,
+        color: '#FFFFFF',
+        fontWeight: '700',
         marginTop: 2,
+        fontVariant: ['tabular-nums'],
     },
     statsRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginTop: 4,
+        marginTop: 6,
+        gap: 16,
     },
     statsSecondary: {
-        fontSize: 13,
-        color: '#a1a1aa',
+        fontSize: 15,
+        color: '#B0B0B0',
         fontWeight: '500',
+        fontVariant: ['tabular-nums'],
     },
     statsDivider: {
-        fontSize: 13,
-        color: '#52525b',
-        marginHorizontal: 8,
+        fontSize: 15,
+        color: '#4A4A4A',
     },
     bottomControls: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 12,
-        marginBottom: 20,
+        marginBottom: 16,
     },
     centerButton: {
-        width: 54,
-        height: 54,
-        backgroundColor: 'rgba(10,10,10,0.75)',
-        borderRadius: 27,
+        width: 52,
+        height: 52,
+        backgroundColor: 'rgba(30,30,30,0.9)',
+        borderRadius: 26,
         alignItems: 'center',
         justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.12)',
     },
     startButton: {
         flex: 1,
-        height: 58,
-        backgroundColor: '#22d3ee',
-        borderRadius: 29,
+        height: 56,
+        backgroundColor: STRAVA_ORANGE,
+        borderRadius: 28,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 10,
     },
     stopButton: {
-        backgroundColor: '#ef4444',
+        backgroundColor: '#FF6B6B',
     },
     savingButton: {
-        backgroundColor: '#52525b',
+        backgroundColor: '#4A4A4A',
     },
     startButtonText: {
-        color: '#000',
-        fontSize: 16,
-        fontWeight: '800',
-        letterSpacing: 0.8,
+        color: '#FFFFFF',
+        fontSize: 17,
+        fontWeight: '700',
+        letterSpacing: 0.5,
     },
     stopButtonText: {
-        color: '#fff',
+        color: '#FFFFFF',
     },
     modalOverlay: {
         flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.85)',
+        backgroundColor: 'rgba(0,0,0,0.7)',
         justifyContent: 'flex-end',
     },
     modalContent: {
-        backgroundColor: '#141414',
-        borderTopLeftRadius: 28,
-        borderTopRightRadius: 28,
+        backgroundColor: STRAVA_CARD,
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
         padding: 24,
-        paddingBottom: 44,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.06)',
-        borderBottomWidth: 0,
+        paddingBottom: 40,
     },
     modalTitle: {
-        color: '#fff',
-        fontSize: 22,
-        fontWeight: 'bold',
+        color: '#FFFFFF',
+        fontSize: 20,
+        fontWeight: '700',
         textAlign: 'center',
-        marginBottom: 24,
+        marginBottom: 20,
     },
     activityOption: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(34, 211, 238, 0.08)',
-        borderRadius: 18,
-        padding: 18,
-        marginBottom: 12,
-        borderWidth: 1,
-        borderColor: 'rgba(34, 211, 238, 0.25)',
+        backgroundColor: STRAVA_BG,
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 10,
         gap: 16,
     },
     activityText: {
-        color: '#fff',
-        fontSize: 18,
+        color: '#FFFFFF',
+        fontSize: 17,
         fontWeight: '600',
     },
     cancelButton: {
-        marginTop: 12,
+        marginTop: 8,
         padding: 16,
         alignItems: 'center',
     },
     cancelText: {
-        color: '#71717a',
+        color: '#8E8E8E',
         fontSize: 16,
         fontWeight: '500',
     },

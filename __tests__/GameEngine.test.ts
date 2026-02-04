@@ -116,7 +116,7 @@ describe('GameEngine', () => {
       expect(result.distance).toBeGreaterThan(200);
     });
 
-    it('should handle invalid start/end points', () => {
+    it('should handle NaN in start point coordinates', () => {
       const path: GPSPoint[] = [
         { lat: NaN, lng: -122.4194, timestamp: Date.now(), speed: null, accuracy: null, altitude: null },
       ];
@@ -125,6 +125,18 @@ describe('GameEngine', () => {
       }
       const result = GameEngine.checkLoopClosure(path);
       expect(result.isClosed).toBe(false);
+      expect(result.distance).toBe(Infinity);
+    });
+
+    it('should handle NaN in end point coordinates', () => {
+      const path: GPSPoint[] = [];
+      for (let i = 0; i < 10; i++) {
+        path.push(createGPSPoint(37.7749, -122.4194));
+      }
+      path.push({ lat: 37.7749, lng: NaN, timestamp: Date.now(), speed: null, accuracy: null, altitude: null });
+      const result = GameEngine.checkLoopClosure(path);
+      expect(result.isClosed).toBe(false);
+      expect(result.distance).toBe(Infinity);
     });
   });
 

@@ -198,6 +198,71 @@ describe('Database Layer', () => {
     });
   });
 
+  describe('bulkPut', () => {
+    it('should insert multiple new items in a single call', async () => {
+      const items: Activity[] = [
+        { id: 'bulk-1', userId: 'u1', type: 'WALK', startTime: Date.now(), distance: 100, duration: 60, polylines: [], isSynced: false },
+        { id: 'bulk-2', userId: 'u1', type: 'RUN', startTime: Date.now(), distance: 200, duration: 120, polylines: [], isSynced: false },
+        { id: 'bulk-3', userId: 'u1', type: 'RIDE', startTime: Date.now(), distance: 300, duration: 180, polylines: [], isSynced: false },
+      ];
+
+      await db.activities.bulkPut(items);
+
+      const all = await db.activities.toArray();
+      const bulkItems = all.filter(a => a.id.startsWith('bulk-'));
+      expect(bulkItems.length).toBe(3);
+    });
+
+    it('should update existing items and insert new ones', async () => {
+      // Pre-insert one item
+      await db.activities.put({
+        id: 'bulk-upsert-1',
+        userId: 'u1',
+        type: 'WALK',
+        startTime: Date.now(),
+        distance: 100,
+        duration: 60,
+        polylines: [],
+        isSynced: false,
+      } as Activity);
+
+      // bulkPut: update the existing one + insert a new one
+      await db.activities.bulkPut([
+        { id: 'bulk-upsert-1', userId: 'u1', type: 'WALK', startTime: Date.now(), distance: 999, duration: 60, polylines: [], isSynced: true } as Activity,
+        { id: 'bulk-upsert-2', userId: 'u1', type: 'RUN', startTime: Date.now(), distance: 500, duration: 120, polylines: [], isSynced: false } as Activity,
+      ]);
+
+      const updated = await db.activities.get('bulk-upsert-1');
+      expect(updated?.distance).toBe(999);
+      expect(updated?.isSynced).toBe(true);
+
+      const inserted = await db.activities.get('bulk-upsert-2');
+      expect(inserted).toBeDefined();
+      expect(inserted?.type).toBe('RUN');
+    });
+
+    it('should be a no-op for empty array', async () => {
+      const before = await db.activities.toArray();
+      await db.activities.bulkPut([]);
+      const after = await db.activities.toArray();
+      expect(after.length).toBe(before.length);
+    });
+
+    it('should not create duplicates when the same id appears twice in input', async () => {
+      await db.activities.bulkPut([
+        { id: 'bulk-dup', userId: 'u1', type: 'WALK', startTime: Date.now(), distance: 100, duration: 60, polylines: [], isSynced: false } as Activity,
+        { id: 'bulk-dup', userId: 'u1', type: 'WALK', startTime: Date.now(), distance: 200, duration: 60, polylines: [], isSynced: true } as Activity,
+      ]);
+
+      const all = await db.activities.toArray();
+      const dupes = all.filter(a => a.id === 'bulk-dup');
+      expect(dupes.length).toBe(1);
+      // Last write wins
+      expect(dupes[0].distance).toBe(200);
+      expect(dupes[0].isSynced).toBe(true);
+    });
+  });
+
   describe('where clause', () => {
     it('should find first matching item', async () => {
       await db.activities.put({

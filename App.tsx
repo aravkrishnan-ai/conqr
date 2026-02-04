@@ -4,13 +4,14 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import * as Linking from 'expo-linking';
 
 import GameScreen from './screens/GameScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import LandingScreen from './screens/LandingScreen';
 import ProfileSetupScreen from './screens/ProfileSetupScreen';
 import { supabase } from './lib/supabase';
-import { AuthService } from './services/AuthService';
+import { AuthService, handleAuthCallbackUrl } from './services/AuthService';
 import { AuthContext } from './contexts/AuthContext';
 
 const Stack = createNativeStackNavigator();
@@ -66,17 +67,24 @@ function AppNavigator() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [hasProfile, setHasProfile] = useState(false);
+  const [suggestedUsername, setSuggestedUsername] = useState('');
+  const [userAvatarUrl, setUserAvatarUrl] = useState<string | null>(null);
 
   const refreshAuthState = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         setIsAuthenticated(true);
+        const meta = session.user?.user_metadata;
+        setSuggestedUsername(meta?.name || meta?.full_name || session.user?.email?.split('@')[0] || '');
+        setUserAvatarUrl(meta?.avatar_url || null);
         const profile = await AuthService.getCurrentProfile();
         setHasProfile(!!profile?.username);
       } else {
         setIsAuthenticated(false);
         setHasProfile(false);
+        setSuggestedUsername('');
+        setUserAvatarUrl(null);
       }
     } catch (err) {
       console.error('Auth check error:', err);
@@ -85,25 +93,48 @@ function AppNavigator() {
 
   useEffect(() => {
     const init = async () => {
+      // Check if app was opened via an auth callback deep link
+      const initialUrl = await Linking.getInitialURL();
+      if (initialUrl && initialUrl.includes('access_token')) {
+        console.log('App opened via auth deep link:', initialUrl);
+        await handleAuthCallbackUrl(initialUrl);
+      }
+
       await refreshAuthState();
       setIsLoading(false);
     };
     init();
+
+    // Listen for incoming deep links (handles auth callbacks when app is already running)
+    const linkingSub = Linking.addEventListener('url', async (event) => {
+      console.log('Deep link received:', event.url);
+      if (event.url.includes('access_token') || event.url.includes('error')) {
+        await handleAuthCallbackUrl(event.url);
+      }
+    });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state changed:', event);
       if (session) {
         setIsAuthenticated(true);
+        const meta = session.user?.user_metadata;
+        setSuggestedUsername(meta?.name || meta?.full_name || session.user?.email?.split('@')[0] || '');
+        setUserAvatarUrl(meta?.avatar_url || null);
         const profile = await AuthService.getCurrentProfile();
         setHasProfile(!!profile?.username);
       } else {
         setIsAuthenticated(false);
         setHasProfile(false);
+        setSuggestedUsername('');
+        setUserAvatarUrl(null);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      linkingSub.remove();
+      subscription.unsubscribe();
+    };
   }, []);
 
   if (isLoading) {
@@ -115,7 +146,7 @@ function AppNavigator() {
   }
 
   return (
-    <AuthContext.Provider value={{ setHasProfile, refreshAuthState }}>
+    <AuthContext.Provider value={{ setHasProfile, refreshAuthState, suggestedUsername, userAvatarUrl }}>
       <Stack.Navigator
         screenOptions={{
           headerShown: false,

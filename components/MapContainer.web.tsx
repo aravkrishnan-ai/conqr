@@ -118,7 +118,7 @@ function MapContainerComponent({ location, path, territories = [], style }: MapC
                     height: 24px;
                     border-radius: 50%;
                     background: rgba(34, 211, 238, 0.3);
-                    border: 2px solid #22d3ee;
+                    border: 2px solid #FC4C02;
                     display: flex;
                     align-items: center;
                     justify-content: center;
@@ -127,7 +127,7 @@ function MapContainerComponent({ location, path, territories = [], style }: MapC
                         width: 10px;
                         height: 10px;
                         border-radius: 50%;
-                        background: #22d3ee;
+                        background: #FC4C02;
                     "></div>
                 </div>
             `;
@@ -204,7 +204,7 @@ function MapContainerComponent({ location, path, territories = [], style }: MapC
                 polylineRef.current.setLatLngs(latLngs);
             } else {
                 polylineRef.current = leaflet.polyline(latLngs, {
-                    color: '#22d3ee',
+                    color: '#FC4C02',
                     weight: 4,
                     opacity: 1,
                     lineJoin: 'round',
@@ -294,10 +294,10 @@ function MapContainerComponent({ location, path, territories = [], style }: MapC
                         !isNaN(coord[0]) && !isNaN(coord[1]))
                     .map(coord => [coord[1], coord[0]]);
                 const polygon = leaflet.polygon(latLngs, {
-                    color: '#22d3ee',
+                    color: '#FC4C02',
                     weight: 2,
                     opacity: 0.8,
-                    fillColor: '#22d3ee',
+                    fillColor: '#FC4C02',
                     fillOpacity: 0.2,
                 }).addTo(map);
                 territoryLayersRef.current.push(polygon);

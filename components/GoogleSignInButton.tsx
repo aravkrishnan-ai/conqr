@@ -34,9 +34,7 @@ export const GoogleSignInButton = () => {
         setLoading(true);
         setError(null);
         try {
-            console.log('Starting Google sign in...');
             await AuthService.signInWithGoogle();
-            console.log('Google sign in completed');
         } catch (err: any) {
             console.error('Sign in error:', err);
             setError(err?.message || 'Sign in failed');
@@ -46,40 +44,44 @@ export const GoogleSignInButton = () => {
     };
 
     return (
-        <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handlePress}
-            disabled={loading}
-        >
-            <View style={styles.content}>
-                {loading ? (
-                    <ActivityIndicator size="small" color="#4285F4" style={styles.loader} />
-                ) : (
-                    <View style={styles.logoContainer}>
-                        <GoogleLogo />
-                    </View>
-                )}
-                <Text style={styles.text}>
-                    {loading ? 'Signing in...' : 'Sign in with Google'}
-                </Text>
-            </View>
-        </TouchableOpacity>
+        <View style={styles.wrapper}>
+            <TouchableOpacity
+                style={[styles.button, loading && styles.buttonDisabled]}
+                onPress={handlePress}
+                disabled={loading}
+            >
+                <View style={styles.content}>
+                    {loading ? (
+                        <ActivityIndicator size="small" color="#4285F4" style={styles.loader} />
+                    ) : (
+                        <View style={styles.logoContainer}>
+                            <GoogleLogo />
+                        </View>
+                    )}
+                    <Text style={styles.text}>
+                        {loading ? 'Signing in...' : 'Sign in with Google'}
+                    </Text>
+                </View>
+            </TouchableOpacity>
+            {error && (
+                <Text style={styles.errorText}>{error}</Text>
+            )}
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
+    wrapper: {
+        width: '100%',
+        maxWidth: 340,
+        alignItems: 'center',
+    },
     button: {
         backgroundColor: '#FFFFFF',
-        borderRadius: 12,
-        paddingVertical: 14,
-        paddingHorizontal: 20,
+        borderRadius: 28,
+        paddingVertical: 16,
+        paddingHorizontal: 24,
         width: '100%',
-        maxWidth: 320,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.15,
-        shadowRadius: 6,
-        elevation: 3,
     },
     buttonDisabled: {
         opacity: 0.7,
@@ -90,14 +92,20 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     logoContainer: {
-        marginRight: 12,
+        marginRight: 14,
     },
     loader: {
-        marginRight: 12,
+        marginRight: 14,
     },
     text: {
-        color: '#1f1f1f',
-        fontSize: 16,
+        color: '#1A1A1A',
+        fontSize: 17,
         fontWeight: '600',
+    },
+    errorText: {
+        color: '#FF6B6B',
+        fontSize: 14,
+        marginTop: 12,
+        textAlign: 'center',
     },
 });

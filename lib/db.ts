@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Activity, Territory, UserProfile, SuspiciousLog } from './types';
+import { Activity, Territory, UserProfile } from './types';
 
 // Helper to safely parse JSON with error handling
 const safeJsonParse = <T>(json: string | null, fallback: T[] = []): T[] => {
@@ -13,27 +13,24 @@ const safeJsonParse = <T>(json: string | null, fallback: T[] = []): T[] => {
     }
 };
 
-// Lock mechanism to prevent race conditions during writes
-const locks: Record<string, Promise<void>> = {};
+// Queue-based lock to serialize writes per key.
+// Each key gets a chain of promises; new operations append to the chain.
+const queues: Record<string, Promise<unknown>> = {};
 const withLock = async <T>(key: string, fn: () => Promise<T>): Promise<T> => {
-    // Wait for any existing operation to complete
-    while (locks[key]) {
-        await locks[key];
-    }
+    const prev = queues[key] ?? Promise.resolve();
+    let resolve: (v: unknown) => void;
+    queues[key] = new Promise(r => { resolve = r; });
 
-    let resolve: () => void;
-    locks[key] = new Promise<void>(r => { resolve = r; });
+    // Wait for previous operation on this key to finish (ignore its errors)
+    await prev.catch(() => {});
 
     try {
         return await fn();
     } finally {
-        delete locks[key];
-        resolve!();
+        resolve!(undefined);
     }
 };
 
-// Simple mock for Dexie since it doesn't work in React Native without complex setup
-// In a real app, we'd use expo-sqlite or direct Supabase calls.
 const createStore = <T extends { id: string | number }>(key: string) => ({
     get: async (id: string | number): Promise<T | undefined> => {
         try {
@@ -56,6 +53,35 @@ const createStore = <T extends { id: string | number }>(key: string) => ({
                 await AsyncStorage.setItem(key, JSON.stringify(parsed));
             } catch (err) {
                 console.error(`db.${key}.put error:`, err);
+                throw err;
+            }
+        });
+    },
+    /**
+     * Upsert multiple items in a single lock acquisition + single AsyncStorage write.
+     * Much more efficient than calling put() in a loop.
+     */
+    bulkPut: async (newItems: T[]): Promise<void> => {
+        if (newItems.length === 0) return;
+        await withLock(key, async () => {
+            try {
+                const items = await AsyncStorage.getItem(key);
+                const parsed = safeJsonParse<T>(items);
+                const idMap = new Map(parsed.map((item, idx) => [item.id, idx]));
+
+                for (const item of newItems) {
+                    const existingIdx = idMap.get(item.id);
+                    if (existingIdx !== undefined) {
+                        parsed[existingIdx] = item;
+                    } else {
+                        idMap.set(item.id, parsed.length);
+                        parsed.push(item);
+                    }
+                }
+
+                await AsyncStorage.setItem(key, JSON.stringify(parsed));
+            } catch (err) {
+                console.error(`db.${key}.bulkPut error:`, err);
                 throw err;
             }
         });
@@ -141,8 +167,6 @@ const db = {
     users: createStore<UserProfile>('conqr_users'),
     activities: createStore<Activity>('conqr_activities'),
     territories: createStore<Territory>('conqr_territories'),
-    gpsLogs: createStore<any>('conqr_gps_logs'),
-    suspiciousLogs: createStore<SuspiciousLog>('conqr_suspicious_logs'),
 };
 
 export { db };

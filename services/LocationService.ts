@@ -80,7 +80,8 @@ export const LocationService = {
                         // Validate location data
                         if (!location?.coords ||
                             typeof location.coords.latitude !== 'number' ||
-                            typeof location.coords.longitude !== 'number') {
+                            typeof location.coords.longitude !== 'number' ||
+                            isNaN(location.coords.latitude) || isNaN(location.coords.longitude)) {
                             console.warn('Invalid location data received:', location);
                             return;
                         }
@@ -144,11 +145,6 @@ export const LocationService = {
                 }
             }
         }
-    },
-
-    emitMockLocation(point: GPSPoint) {
-        this.lastKnownLocation = point;
-        this.notifyListeners(point);
     },
 
     /**

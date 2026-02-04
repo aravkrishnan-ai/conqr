@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl } from 'react-native';
-import { ArrowLeft, User, Mail, Footprints, PersonStanding, Bike, Map, Clock, Route } from 'lucide-react-native';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, TextInput, Alert } from 'react-native';
+import { ArrowLeft, User, Mail, Footprints, PersonStanding, Bike, Map, Clock, Route, Pencil, Check, X } from 'lucide-react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { AuthService } from '../services/AuthService';
@@ -20,6 +20,12 @@ export default function ProfileScreen() {
         totalDuration: number;
         byType: { [key: string]: { count: number; distance: number; duration: number } };
     } | null>(null);
+
+    // Edit mode state
+    const [isEditing, setIsEditing] = useState(false);
+    const [editUsername, setEditUsername] = useState('');
+    const [editBio, setEditBio] = useState('');
+    const [saving, setSaving] = useState(false);
 
     // Track if initial load has completed to prevent double-fetching
     const initialLoadComplete = React.useRef(false);
@@ -83,10 +89,46 @@ export default function ProfileScreen() {
         await supabase.auth.signOut();
     };
 
+    const startEditing = () => {
+        setEditUsername(profile?.username || '');
+        setEditBio(profile?.bio || '');
+        setIsEditing(true);
+    };
+
+    const cancelEditing = () => {
+        setIsEditing(false);
+    };
+
+    const saveEdits = async () => {
+        const trimmed = editUsername.trim();
+        if (!trimmed) {
+            Alert.alert('Error', 'Username cannot be empty');
+            return;
+        }
+        if (trimmed.length < 3) {
+            Alert.alert('Error', 'Username must be at least 3 characters');
+            return;
+        }
+
+        setSaving(true);
+        try {
+            await AuthService.updateProfile({
+                username: trimmed,
+                bio: editBio.trim(),
+            });
+            setProfile(prev => prev ? { ...prev, username: trimmed, bio: editBio.trim() } : prev);
+            setIsEditing(false);
+        } catch (err: any) {
+            Alert.alert('Error', err.message || 'Failed to update profile');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     if (loading) {
         return (
             <View style={[styles.container, styles.center]}>
-                <ActivityIndicator color="#22d3ee" />
+                <ActivityIndicator color="#FC4C02" />
             </View>
         );
     }
@@ -105,9 +147,9 @@ export default function ProfileScreen() {
 
     const getActivityIcon = (type: string) => {
         switch (type) {
-            case 'RUN': return <PersonStanding color="#22d3ee" size={20} />;
-            case 'RIDE': return <Bike color="#22d3ee" size={20} />;
-            default: return <Footprints color="#22d3ee" size={20} />;
+            case 'RUN': return <PersonStanding color="#FC4C02" size={20} />;
+            case 'RIDE': return <Bike color="#FC4C02" size={20} />;
+            default: return <Footprints color="#FC4C02" size={20} />;
         }
     };
 
@@ -123,7 +165,24 @@ export default function ProfileScreen() {
                     <ArrowLeft color="#fff" size={24} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Profile</Text>
-                <View style={{ width: 24 }} />
+                {isEditing ? (
+                    <View style={styles.editActions}>
+                        <TouchableOpacity onPress={cancelEditing} style={styles.editActionBtn}>
+                            <X color="#71717a" size={20} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={saveEdits} disabled={saving} style={styles.editActionBtn}>
+                            {saving ? (
+                                <ActivityIndicator size="small" color="#FC4C02" />
+                            ) : (
+                                <Check color="#FC4C02" size={20} />
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                ) : (
+                    <TouchableOpacity onPress={startEditing}>
+                        <Pencil color="#71717a" size={20} />
+                    </TouchableOpacity>
+                )}
             </View>
 
             <ScrollView
@@ -143,11 +202,37 @@ export default function ProfileScreen() {
                             <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
                         ) : (
                             <View style={styles.avatarPlaceholder}>
-                                <User color="#22d3ee" size={40} />
+                                <User color="#FC4C02" size={40} />
                             </View>
                         )}
-                        <Text style={styles.username}>{profile?.username || 'Conqueror'}</Text>
-                        {profile?.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
+                        {isEditing ? (
+                            <View style={styles.editFields}>
+                                <TextInput
+                                    style={styles.editInput}
+                                    value={editUsername}
+                                    onChangeText={setEditUsername}
+                                    placeholder="Username"
+                                    placeholderTextColor="#52525b"
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                    maxLength={24}
+                                />
+                                <TextInput
+                                    style={[styles.editInput, styles.editBioInput]}
+                                    value={editBio}
+                                    onChangeText={setEditBio}
+                                    placeholder="Add a bio..."
+                                    placeholderTextColor="#52525b"
+                                    multiline
+                                    maxLength={120}
+                                />
+                            </View>
+                        ) : (
+                            <>
+                                <Text style={styles.username}>{profile?.username || 'Conqueror'}</Text>
+                                {profile?.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
+                            </>
+                        )}
                     </View>
 
                     {/* Activity Stats */}
@@ -156,17 +241,17 @@ export default function ProfileScreen() {
                             <Text style={styles.sectionTitle}>Your Stats</Text>
                             <View style={styles.statsGrid}>
                                 <View style={styles.statCard}>
-                                    <Route color="#22d3ee" size={24} />
+                                    <Route color="#FC4C02" size={24} />
                                     <Text style={styles.statValue}>{formatDistance(stats.totalDistance)}</Text>
                                     <Text style={styles.statLabel}>Total Distance</Text>
                                 </View>
                                 <View style={styles.statCard}>
-                                    <Clock color="#22d3ee" size={24} />
+                                    <Clock color="#FC4C02" size={24} />
                                     <Text style={styles.statValue}>{formatDuration(stats.totalDuration)}</Text>
                                     <Text style={styles.statLabel}>Total Time</Text>
                                 </View>
                                 <View style={styles.statCard}>
-                                    <Map color="#22d3ee" size={24} />
+                                    <Map color="#FC4C02" size={24} />
                                     <Text style={styles.statValue}>{stats.totalActivities}</Text>
                                     <Text style={styles.statLabel}>Activities</Text>
                                 </View>
@@ -178,7 +263,7 @@ export default function ProfileScreen() {
                                     {stats.byType['WALK'] && (
                                         <View style={styles.typeRow}>
                                             <View style={styles.typeIconContainer}>
-                                                <Footprints color="#22d3ee" size={16} />
+                                                <Footprints color="#FC4C02" size={16} />
                                             </View>
                                             <Text style={styles.typeName}>Walks</Text>
                                             <Text style={styles.typeCount}>{stats.byType['WALK'].count}</Text>
@@ -188,7 +273,7 @@ export default function ProfileScreen() {
                                     {stats.byType['RUN'] && (
                                         <View style={styles.typeRow}>
                                             <View style={styles.typeIconContainer}>
-                                                <PersonStanding color="#22d3ee" size={16} />
+                                                <PersonStanding color="#FC4C02" size={16} />
                                             </View>
                                             <Text style={styles.typeName}>Runs</Text>
                                             <Text style={styles.typeCount}>{stats.byType['RUN'].count}</Text>
@@ -198,7 +283,7 @@ export default function ProfileScreen() {
                                     {stats.byType['RIDE'] && (
                                         <View style={styles.typeRow}>
                                             <View style={styles.typeIconContainer}>
-                                                <Bike color="#22d3ee" size={16} />
+                                                <Bike color="#FC4C02" size={16} />
                                             </View>
                                             <Text style={styles.typeName}>Rides</Text>
                                             <Text style={styles.typeCount}>{stats.byType['RIDE'].count}</Text>
@@ -236,7 +321,7 @@ export default function ProfileScreen() {
                                         </View>
                                         {activity.territoryId && (
                                             <View style={styles.territoryBadge}>
-                                                <Map color="#22d3ee" size={12} />
+                                                <Map color="#FC4C02" size={12} />
                                             </View>
                                         )}
                                     </View>
@@ -272,10 +357,18 @@ export default function ProfileScreen() {
     );
 }
 
+// Strava-inspired color palette
+const STRAVA_ORANGE = '#FC4C02';
+const STRAVA_BG = '#121212';
+const STRAVA_CARD = '#1E1E1E';
+const STRAVA_BORDER = '#2D2D2D';
+const STRAVA_TEXT = '#FFFFFF';
+const STRAVA_TEXT_SECONDARY = '#8E8E8E';
+
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#000',
+        backgroundColor: STRAVA_BG,
     },
     center: {
         justifyContent: 'center',
@@ -285,60 +378,89 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: 20,
+        padding: 16,
+        paddingTop: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: STRAVA_BORDER,
     },
     headerTitle: {
-        color: '#fff',
+        color: STRAVA_TEXT,
         fontSize: 18,
-        fontWeight: 'bold',
+        fontWeight: '700',
+    },
+    editActions: {
+        flexDirection: 'row',
+        gap: 16,
+    },
+    editActionBtn: {
+        padding: 4,
     },
     scrollContent: {
         flex: 1,
     },
     content: {
-        padding: 24,
+        padding: 20,
         alignItems: 'center',
     },
     profileHeader: {
         alignItems: 'center',
-        marginBottom: 32,
+        marginBottom: 28,
     },
     avatarPlaceholder: {
-        width: 100,
-        height: 100,
-        borderRadius: 50,
-        backgroundColor: '#22d3ee33',
+        width: 96,
+        height: 96,
+        borderRadius: 48,
+        backgroundColor: 'rgba(252, 76, 2, 0.15)',
         alignItems: 'center',
         justifyContent: 'center',
-        borderWidth: 2,
-        borderColor: '#22d3ee66',
         marginBottom: 16,
     },
     avatar: {
-        width: 100,
-        height: 100,
-        borderRadius: 50,
+        width: 96,
+        height: 96,
+        borderRadius: 48,
         marginBottom: 16,
-        borderWidth: 2,
-        borderColor: '#22d3ee',
     },
     username: {
-        color: '#fff',
+        color: STRAVA_TEXT,
         fontSize: 24,
-        fontWeight: 'bold',
+        fontWeight: '700',
     },
     bio: {
-        color: '#a1a1aa',
+        color: STRAVA_TEXT_SECONDARY,
         fontSize: 14,
-        marginTop: 8,
+        marginTop: 6,
         textAlign: 'center',
     },
+    editFields: {
+        width: '100%',
+        maxWidth: 280,
+        gap: 12,
+    },
+    editInput: {
+        backgroundColor: STRAVA_CARD,
+        borderWidth: 1,
+        borderColor: STRAVA_BORDER,
+        borderRadius: 8,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        color: STRAVA_TEXT,
+        fontSize: 16,
+        textAlign: 'center',
+    },
+    editBioInput: {
+        height: 60,
+        textAlignVertical: 'top',
+        textAlign: 'left',
+    },
     sectionTitle: {
-        color: '#fff',
-        fontSize: 18,
-        fontWeight: 'bold',
-        marginBottom: 16,
+        color: STRAVA_TEXT,
+        fontSize: 13,
+        fontWeight: '600',
+        marginBottom: 12,
         alignSelf: 'flex-start',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
     },
     statsSection: {
         width: '100%',
@@ -346,63 +468,64 @@ const styles = StyleSheet.create({
     },
     statsGrid: {
         flexDirection: 'row',
-        gap: 12,
+        gap: 10,
     },
     statCard: {
         flex: 1,
-        backgroundColor: '#18181b',
-        borderRadius: 16,
-        padding: 16,
+        backgroundColor: STRAVA_CARD,
+        borderRadius: 12,
+        padding: 14,
         alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#27272a',
     },
     statValue: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: 'bold',
+        color: STRAVA_TEXT,
+        fontSize: 18,
+        fontWeight: '700',
         marginTop: 8,
     },
     statLabel: {
-        color: '#71717a',
+        color: STRAVA_TEXT_SECONDARY,
         fontSize: 11,
         marginTop: 4,
+        textTransform: 'uppercase',
+        letterSpacing: 0.3,
     },
     typeBreakdown: {
-        marginTop: 16,
-        backgroundColor: '#18181b',
+        marginTop: 12,
+        backgroundColor: STRAVA_CARD,
         borderRadius: 12,
-        padding: 12,
-        borderWidth: 1,
-        borderColor: '#27272a',
+        padding: 14,
     },
     typeRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 8,
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: STRAVA_BORDER,
     },
     typeIconContainer: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        backgroundColor: '#22d3ee22',
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: 'rgba(252, 76, 2, 0.15)',
         alignItems: 'center',
         justifyContent: 'center',
-        marginRight: 10,
+        marginRight: 12,
     },
     typeName: {
         flex: 1,
-        color: '#fff',
-        fontSize: 14,
+        color: STRAVA_TEXT,
+        fontSize: 15,
+        fontWeight: '500',
     },
     typeCount: {
-        color: '#71717a',
-        fontSize: 13,
-        marginRight: 12,
+        color: STRAVA_TEXT_SECONDARY,
+        fontSize: 14,
+        marginRight: 16,
     },
     typeDistance: {
-        color: '#22d3ee',
-        fontSize: 13,
+        color: STRAVA_ORANGE,
+        fontSize: 14,
         fontWeight: '600',
         minWidth: 70,
         textAlign: 'right',
@@ -413,98 +536,90 @@ const styles = StyleSheet.create({
     },
     emptyState: {
         alignItems: 'center',
-        padding: 32,
-        backgroundColor: '#18181b',
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: '#27272a',
+        padding: 40,
+        backgroundColor: STRAVA_CARD,
+        borderRadius: 12,
     },
     emptyText: {
-        color: '#71717a',
+        color: STRAVA_TEXT_SECONDARY,
         fontSize: 16,
         marginTop: 12,
     },
     emptyHint: {
-        color: '#52525b',
+        color: '#606060',
         fontSize: 14,
         marginTop: 4,
     },
     activityCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#18181b',
+        backgroundColor: STRAVA_CARD,
         borderRadius: 12,
         padding: 14,
         marginBottom: 8,
-        borderWidth: 1,
-        borderColor: '#27272a',
     },
     activityIcon: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: '#22d3ee22',
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: 'rgba(252, 76, 2, 0.15)',
         alignItems: 'center',
         justifyContent: 'center',
-        marginRight: 12,
+        marginRight: 14,
     },
     activityInfo: {
         flex: 1,
     },
     activityType: {
-        color: '#fff',
-        fontSize: 15,
+        color: STRAVA_TEXT,
+        fontSize: 16,
         fontWeight: '600',
     },
     activityDate: {
-        color: '#71717a',
-        fontSize: 12,
+        color: STRAVA_TEXT_SECONDARY,
+        fontSize: 13,
         marginTop: 2,
     },
     activityStats: {
         alignItems: 'flex-end',
     },
     activityDistance: {
-        color: '#22d3ee',
-        fontSize: 14,
-        fontWeight: 'bold',
+        color: STRAVA_ORANGE,
+        fontSize: 16,
+        fontWeight: '700',
     },
     activityDuration: {
-        color: '#71717a',
-        fontSize: 12,
+        color: STRAVA_TEXT_SECONDARY,
+        fontSize: 13,
         marginTop: 2,
     },
     territoryBadge: {
-        marginLeft: 8,
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        backgroundColor: '#22d3ee22',
+        marginLeft: 10,
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        backgroundColor: 'rgba(252, 76, 2, 0.15)',
         alignItems: 'center',
         justifyContent: 'center',
     },
     showMoreButton: {
         marginTop: 8,
-        padding: 12,
-        backgroundColor: '#18181b',
+        padding: 14,
+        backgroundColor: STRAVA_CARD,
         borderRadius: 12,
         alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#27272a',
     },
     showMoreText: {
-        color: '#22d3ee',
-        fontSize: 14,
+        color: STRAVA_ORANGE,
+        fontSize: 15,
         fontWeight: '600',
     },
     infoSection: {
         width: '100%',
-        backgroundColor: '#18181b',
-        borderRadius: 16,
+        backgroundColor: STRAVA_CARD,
+        borderRadius: 12,
         padding: 16,
         marginBottom: 16,
-        borderWidth: 1,
-        borderColor: '#27272a',
     },
     infoRow: {
         flexDirection: 'row',
@@ -512,22 +627,20 @@ const styles = StyleSheet.create({
         gap: 12,
     },
     infoText: {
-        color: '#fff',
-        fontSize: 16,
+        color: STRAVA_TEXT,
+        fontSize: 15,
     },
     signOutButton: {
         width: '100%',
         padding: 16,
-        backgroundColor: '#ef444422',
+        backgroundColor: 'rgba(255, 107, 107, 0.1)',
         borderRadius: 12,
         alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#ef444444',
         marginBottom: 40,
     },
     signOutText: {
-        color: '#ef4444',
+        color: '#FF6B6B',
         fontSize: 16,
-        fontWeight: 'bold',
+        fontWeight: '600',
     },
 });

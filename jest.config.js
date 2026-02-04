@@ -5,16 +5,20 @@ module.exports = {
   testMatch: ['**/*.test.ts'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
   transform: {
-    '^.+\\.tsx?$': ['ts-jest', {
+    '^.+\\.[tj]sx?$': ['ts-jest', {
       tsconfig: {
         module: 'commonjs',
         esModuleInterop: true,
         allowSyntheticDefaultImports: true,
         strict: false,
         skipLibCheck: true,
+        allowJs: true,
       }
     }]
   },
+  transformIgnorePatterns: [
+    '/node_modules/(?!(@turf|kdbush|geokdbush|geojson-equality-ts|splaytree-ts|polyclip-ts|point-in-polygon-hao)/)',
+  ],
   moduleNameMapper: {
     '^@react-native-async-storage/async-storage$': '<rootDir>/__tests__/__mocks__/async-storage.ts',
     '^expo-location$': '<rootDir>/__tests__/__mocks__/expo-location.ts',

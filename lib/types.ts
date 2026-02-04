@@ -53,10 +53,3 @@ export interface TerritoryClaimEvent {
   activityId: string;
 }
 
-export interface SuspiciousLog {
-  id: string;
-  activityId: string;
-  reason: string;
-  timestamp: number;
-  data: any;
-}
