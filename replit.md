@@ -7,7 +7,7 @@ CONQR is a mobile app (Android/iOS) where users claim real-world territory by ru
 
 ### Tech Stack
 - **Framework**: React Native with Expo SDK 54
-- **Navigation**: React Navigation (native stack)
+- **Navigation**: React Navigation (native stack with tab-style navigation)
 - **Backend**: Supabase (auth, database)
 - **Maps**: Leaflet via WebView (both native and web)
 - **Local Storage**: AsyncStorage (for offline-first data)
@@ -19,19 +19,23 @@ CONQR is a mobile app (Android/iOS) where users claim real-world territory by ru
 ├── contexts/
 │   └── AuthContext.tsx        # Auth context (extracted to avoid require cycles)
 ├── screens/
-│   ├── LandingScreen.tsx      # Login screen with Google OAuth
+│   ├── LandingScreen.tsx      # Login screen with Google OAuth (dark theme)
 │   ├── ProfileSetupScreen.tsx # Initial profile setup
-│   ├── GameScreen.tsx         # Main game map view
-│   └── ProfileScreen.tsx      # User profile
+│   ├── HomeScreen.tsx         # Map view showing territories
+│   ├── RecordScreen.tsx       # Activity recording with stats
+│   └── ProfileScreen.tsx      # User profile with dashboard
+├── components/
+│   ├── BottomTabBar.tsx       # Bottom navigation (home, record, profile)
+│   ├── MapContainer.tsx       # Native map component
+│   ├── MapContainer.web.tsx   # Web fallback map
+│   └── GoogleSignInButton.tsx # Google OAuth button
 ├── services/
 │   ├── AuthService.ts         # Authentication handling
 │   ├── GameEngine.ts          # Territory calculation logic
 │   ├── LocationService.ts     # GPS tracking
 │   ├── TerritoryService.ts    # Save/load territories (Supabase + local)
+│   ├── ActivityService.ts     # Activity recording/stats
 │   └── WakeLockService.ts     # Keep screen awake during tracking
-├── components/
-│   ├── MapContainer.tsx       # Native map component
-│   └── MapContainer.web.tsx   # Web fallback map
 ├── lib/
 │   ├── supabase.ts            # Supabase client config
 │   ├── db.ts                  # Local AsyncStorage wrapper
@@ -45,20 +49,15 @@ CONQR is a mobile app (Android/iOS) where users claim real-world territory by ru
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY` - Supabase anon key
 - `EXPO_TOKEN` - For EAS builds (secret)
 
-## Recent Changes (January 2026)
-- **Fixed require cycle**: Extracted AuthContext to separate file to prevent App.tsx <-> ProfileSetupScreen.tsx cycle
-- **Added territory persistence**: Territories now save to Supabase and sync across devices
-- **Display total conquered area**: Game screen now shows cumulative conquered territory
-- **Fixed native APK issues**: 
-  - Added react-native-get-random-values polyfill for uuid
-  - Removed unused packages (maplibre-react-native, dexie, react-native-maps)
-  - Fixed AuthService async/await pattern
-  - Territory polygons now render on the map
-- **Hardcoded Supabase credentials**: Supabase URL and anon key now hardcoded in lib/supabase.ts for reliable native builds
-- **iOS build configuration**: 
-  - Added ITSAppUsesNonExemptEncryption: false to app.json
-  - Configured eas.json with iOS internal distribution for preview profile
-  - Fixed GoogleSignInButton.tsx.web for web compatibility
+## Recent Changes (February 2026)
+- **Complete UI Revamp**: Redesigned based on Figma mockups
+  - Landing screen: Dark background with italic "Conqr" branding
+  - Home screen: Map view showing conquered territories
+  - Record screen: Stats (distance, duration, pace) with "start run" button
+  - Profile screen: User info, streak counter, dashboard with "your runs" and "statistics"
+  - Bottom tab navigation: home, record (red circle), profile
+- **New color scheme**: Orange (#E65100) primary, white backgrounds for main screens
+- **Separated navigation**: HomeScreen (map view) and RecordScreen (activity tracking)
 
 ## Building Apps
 
@@ -84,6 +83,7 @@ Build profiles in `eas.json`:
 - `production` - Production build for app stores
 
 ## User Preferences
-- Dark theme throughout
-- Cyan (#22d3ee) as primary accent color
+- Light theme for main screens (Home, Record, Profile)
+- Dark theme for Landing screen only
+- Orange (#E65100) as primary accent color
 - Offline-first data persistence

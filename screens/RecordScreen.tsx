@@ -1,0 +1,602 @@
+import * as React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Modal, Animated, Easing, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import { Footprints, Bike, PersonStanding } from 'lucide-react-native';
+import MapContainer, { MapContainerHandle } from '../components/MapContainer';
+import BottomTabBar from '../components/BottomTabBar';
+import { LocationService } from '../services/LocationService';
+import { GameEngine } from '../services/GameEngine';
+import { WakeLockService } from '../services/WakeLockService';
+import { TerritoryService } from '../services/TerritoryService';
+import { ActivityService } from '../services/ActivityService';
+import { GPSPoint, ActivityType, Territory, Activity } from '../lib/types';
+import { supabase } from '../lib/supabase';
+import { getDistance } from 'geolib';
+import { v4 as uuidv4 } from 'uuid';
+
+interface RecordScreenProps {
+  navigation: any;
+}
+
+export default function RecordScreen({ navigation }: RecordScreenProps) {
+  const [location, setLocation] = React.useState<GPSPoint | null>(null);
+  const [path, setPath] = React.useState<GPSPoint[]>([]);
+  const [isTracking, setIsTracking] = React.useState(false);
+  const [showActivityPicker, setShowActivityPicker] = React.useState(false);
+  const [activityType, setActivityType] = React.useState<ActivityType | null>(null);
+  const [locationError, setLocationError] = React.useState<string | null>(null);
+  const [savedTerritories, setSavedTerritories] = React.useState<Territory[]>([]);
+  const [trackingStartTime, setTrackingStartTime] = React.useState<number | null>(null);
+  const [currentDistance, setCurrentDistance] = React.useState(0);
+  const [elapsedTime, setElapsedTime] = React.useState(0);
+  const [currentSpeed, setCurrentSpeed] = React.useState(0);
+  const [isSaving, setIsSaving] = React.useState(false);
+
+  const mapRef = React.useRef<MapContainerHandle>(null);
+  const isTrackingRef = React.useRef(false);
+  const pathRef = React.useRef<GPSPoint[]>([]);
+  const activityTypeRef = React.useRef<ActivityType | null>(null);
+  const startTimeRef = React.useRef<number | null>(null);
+  const timerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const runningDistanceRef = React.useRef(0);
+  const recentPositionsRef = React.useRef<{ lat: number; lng: number; time: number }[]>([]);
+
+  const STILLNESS_WINDOW_MS = 3000;
+  const STILLNESS_THRESHOLD_M = 3;
+  const MIN_POINT_DISTANCE_M = 2;
+
+  isTrackingRef.current = isTracking;
+  pathRef.current = path;
+  activityTypeRef.current = activityType;
+  startTimeRef.current = trackingStartTime;
+
+  React.useEffect(() => {
+    const loadTerritories = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const territories = await TerritoryService.getUserTerritories(session.user.id);
+          setSavedTerritories(territories);
+        }
+      } catch (err) {
+        console.error('Failed to load territories:', err);
+      }
+    };
+    loadTerritories();
+  }, []);
+
+  React.useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    let mounted = true;
+
+    const start = async () => {
+      try {
+        unsubscribe = await LocationService.startTracking(
+          (point) => {
+            if (!mounted) return;
+            setLocationError(null);
+            setLocation(point);
+
+            if (!isTrackingRef.current) return;
+
+            const MAX_ACCURACY_METERS = 50;
+            if (point.accuracy !== null && point.accuracy > MAX_ACCURACY_METERS) return;
+
+            if (activityTypeRef.current && point.speed !== null) {
+              GameEngine.validateSpeed(point, activityTypeRef.current);
+            }
+
+            const now = Date.now();
+            const currentPos = { lat: point.lat, lng: point.lng, time: now };
+
+            recentPositionsRef.current.push(currentPos);
+            recentPositionsRef.current = recentPositionsRef.current.filter(
+              p => now - p.time < STILLNESS_WINDOW_MS
+            );
+
+            if (point.speed !== null && point.speed >= 0.8) {
+              // Moving
+            } else if (recentPositionsRef.current.length > 1) {
+              const oldest = recentPositionsRef.current[0];
+              let maxDisplacement = 0;
+              for (const pos of recentPositionsRef.current) {
+                try {
+                  const d = getDistance(
+                    { latitude: oldest.lat, longitude: oldest.lng },
+                    { latitude: pos.lat, longitude: pos.lng }
+                  );
+                  if (d > maxDisplacement) maxDisplacement = d;
+                } catch { /* ignore */ }
+              }
+
+              if (maxDisplacement < STILLNESS_THRESHOLD_M) {
+                if (point.speed === null || point.speed < 0.3) return;
+              }
+            }
+
+            setPath(prev => {
+              if (prev.length > 0) {
+                const last = prev[prev.length - 1];
+                try {
+                  const d = getDistance(
+                    { latitude: last.lat, longitude: last.lng },
+                    { latitude: point.lat, longitude: point.lng }
+                  );
+                  if (d < MIN_POINT_DISTANCE_M) return prev;
+                } catch { /* add point on error */ }
+              }
+
+              const newPath = [...prev, point];
+
+              try {
+                if (prev.length > 0) {
+                  const lastPoint = prev[prev.length - 1];
+                  const segDist = getDistance(
+                    { latitude: lastPoint.lat, longitude: lastPoint.lng },
+                    { latitude: point.lat, longitude: point.lng }
+                  );
+                  if (segDist > 0 && segDist < 1000) {
+                    runningDistanceRef.current += segDist;
+                  }
+                }
+                setCurrentDistance(runningDistanceRef.current);
+              } catch { /* ignore */ }
+
+              return newPath;
+            });
+          },
+          (error) => {
+            if (!mounted) return;
+            setLocationError(error?.message || 'Location access denied');
+          }
+        );
+      } catch {
+        if (mounted) setLocationError('Failed to start location tracking');
+      }
+    };
+
+    start();
+
+    return () => {
+      mounted = false;
+      if (unsubscribe) unsubscribe();
+      WakeLockService.release();
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (isTracking) {
+      WakeLockService.request().catch(() => {});
+    } else {
+      WakeLockService.release().catch(() => {});
+    }
+  }, [isTracking]);
+
+  React.useEffect(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
+    if (isTracking && trackingStartTime) {
+      const updateStats = () => {
+        const elapsed = Math.floor((Date.now() - trackingStartTime) / 1000);
+        setElapsedTime(elapsed);
+
+        const recentPath = pathRef.current.slice(-5);
+        if (recentPath.length >= 2) {
+          const recentSpeeds = recentPath
+            .map(p => p.speed)
+            .filter((s): s is number => s !== null && s !== undefined && s >= 0);
+          if (recentSpeeds.length > 0) {
+            setCurrentSpeed(recentSpeeds.reduce((a, b) => a + b, 0) / recentSpeeds.length);
+          }
+        }
+      };
+
+      updateStats();
+      timerRef.current = setInterval(updateStats, 1000);
+    }
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [isTracking, trackingStartTime]);
+
+  const handleStartPress = async () => {
+    if (locationError) {
+      Alert.alert("Location Required", "Please enable location access to use CONQR.");
+      return;
+    }
+
+    if (isSaving) return;
+
+    if (isTracking) {
+      isTrackingRef.current = false;
+      setIsTracking(false);
+      setIsSaving(true);
+
+      const currentPath = [...pathRef.current];
+      const currentActivityType = activityTypeRef.current;
+      const startTime = startTimeRef.current || Date.now();
+      const endTime = Date.now();
+
+      const SAVE_TIMEOUT_MS = 20000;
+      const saveTimeout = setTimeout(() => {
+        setIsSaving(false);
+        resetTrackingState();
+        Alert.alert("Save Timeout", "Activity save took too long.");
+      }, SAVE_TIMEOUT_MS);
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const userId = session?.user?.id || 'anonymous';
+        const activityId = uuidv4();
+
+        const distance = ActivityService.calculateDistance(currentPath);
+        const duration = Math.round((endTime - startTime) / 1000);
+        const averageSpeed = ActivityService.calculateAverageSpeed(currentPath);
+        const currentArea = GameEngine.calculateArea(currentPath);
+
+        let savedTerritory: Territory | null = null;
+        const { isClosed } = GameEngine.checkLoopClosure(currentPath);
+
+        if (isClosed && currentArea > 0) {
+          const territory = GameEngine.processTerritory(currentPath, userId, activityId);
+          if (territory) {
+            savedTerritory = await TerritoryService.saveTerritory(territory);
+            setSavedTerritories(prev => [savedTerritory!, ...prev]);
+          }
+        }
+
+        const activity: Activity = {
+          id: activityId,
+          userId,
+          type: currentActivityType || 'WALK',
+          startTime,
+          endTime,
+          distance,
+          duration,
+          polylines: [currentPath],
+          isSynced: false,
+          territoryId: savedTerritory?.id,
+          averageSpeed
+        };
+
+        const savedActivity = await ActivityService.saveActivity(activity);
+
+        if (savedActivity) {
+          const durationFormatted = ActivityService.formatDuration(duration);
+          const paceFormatted = averageSpeed > 0 ? ActivityService.calculatePace(averageSpeed) : '--:--';
+
+          if (savedTerritory) {
+            Alert.alert(
+              "Territory Conquered!",
+              `${currentActivityType} completed!\n\n` +
+              `Distance: ${(distance / 1000).toFixed(2)} km\n` +
+              `Duration: ${durationFormatted}\n` +
+              `Pace: ${paceFormatted} /km\n` +
+              `Territory: ${(savedTerritory.area / 1000000).toFixed(4)} km²`
+            );
+          } else {
+            Alert.alert(
+              "Activity Saved!",
+              `${currentActivityType} completed!\n\n` +
+              `Distance: ${(distance / 1000).toFixed(2)} km\n` +
+              `Duration: ${durationFormatted}\n` +
+              `Pace: ${paceFormatted} /km\n\n` +
+              `Close your loop to claim territory!`
+            );
+          }
+        } else {
+          Alert.alert("Activity Too Short", "Move more to record your activity.");
+        }
+      } catch {
+        Alert.alert("Error", "Failed to save activity.");
+      } finally {
+        clearTimeout(saveTimeout);
+        setIsSaving(false);
+        resetTrackingState();
+      }
+    } else {
+      setShowActivityPicker(true);
+    }
+  };
+
+  const resetTrackingState = () => {
+    setPath([]);
+    pathRef.current = [];
+    runningDistanceRef.current = 0;
+    recentPositionsRef.current = [];
+    setActivityType(null);
+    setTrackingStartTime(null);
+    setCurrentDistance(0);
+    setElapsedTime(0);
+    setCurrentSpeed(0);
+  };
+
+  const startTracking = (type: ActivityType) => {
+    resetTrackingState();
+    setActivityType(type);
+    setTrackingStartTime(Date.now());
+    setShowActivityPicker(false);
+    isTrackingRef.current = true;
+    setIsTracking(true);
+  };
+
+  const formatDuration = (seconds: number): string => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const formatPace = (speed: number): string => {
+    if (speed <= 0) return '0.00';
+    const paceSeconds = 1000 / speed;
+    const mins = Math.floor(paceSeconds / 60);
+    const secs = Math.floor(paceSeconds % 60);
+    if (mins > 99) return '0.00';
+    return `${mins}.${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleTabPress = (tab: 'home' | 'record' | 'profile') => {
+    if (tab === 'home') {
+      navigation.navigate('Home');
+    } else if (tab === 'profile') {
+      navigation.navigate('Profile');
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <StatusBar style="dark" />
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <View style={styles.content}>
+          <Text style={styles.mapsLabel}>maps</Text>
+          
+          <View style={styles.mapContainer}>
+            <MapContainer
+              ref={mapRef}
+              location={location}
+              path={path}
+              territories={savedTerritories}
+              style={styles.map}
+            />
+            <View style={styles.mapDivider} />
+          </View>
+
+          <View style={styles.statsContainer}>
+            <View style={styles.statsRow}>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>
+                  {(currentDistance / 1000).toFixed(2)}km
+                </Text>
+                <Text style={styles.statLabel}>Distance</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{formatDuration(elapsedTime)}</Text>
+                <Text style={styles.statLabel}>Duration</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{formatPace(currentSpeed)}</Text>
+                <Text style={styles.statLabel}>Average pace</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.startButton,
+                isTracking && styles.stopButton,
+                isSaving && styles.savingButton
+              ]}
+              onPress={handleStartPress}
+              disabled={isSaving}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.startButtonText}>
+                {isSaving ? 'saving...' : isTracking ? 'stop run' : 'start run'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+      
+      <BottomTabBar activeTab="record" onTabPress={handleTabPress} />
+
+      <Modal
+        visible={showActivityPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowActivityPicker(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowActivityPicker(false)}
+        >
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Select Activity</Text>
+
+            <TouchableOpacity
+              style={styles.activityRow}
+              onPress={() => startTracking('RUN')}
+            >
+              <View style={styles.activityIcon}>
+                <PersonStanding color="#E65100" size={24} />
+              </View>
+              <Text style={styles.activityName}>Run</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.activityRow}
+              onPress={() => startTracking('WALK')}
+            >
+              <View style={styles.activityIcon}>
+                <Footprints color="#E65100" size={24} />
+              </View>
+              <Text style={styles.activityName}>Walk</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.activityRow}
+              onPress={() => startTracking('RIDE')}
+            >
+              <View style={styles.activityIcon}>
+                <Bike color="#E65100" size={24} />
+              </View>
+              <Text style={styles.activityName}>Ride</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setShowActivityPicker(false)}
+            >
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  safeArea: {
+    flex: 1,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  mapsLabel: {
+    fontSize: 18,
+    color: '#333333',
+    textAlign: 'center',
+    paddingVertical: 16,
+    fontWeight: '400',
+  },
+  mapContainer: {
+    flex: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#F5F5F5',
+  },
+  map: {
+    flex: 1,
+  },
+  mapDivider: {
+    height: 4,
+    backgroundColor: '#333333',
+    marginHorizontal: 60,
+    borderRadius: 2,
+    marginTop: 8,
+  },
+  statsContainer: {
+    paddingVertical: 24,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 24,
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#1A1A1A',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#666666',
+    marginTop: 4,
+  },
+  startButton: {
+    backgroundColor: '#1A1A1A',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  stopButton: {
+    backgroundColor: '#FF3B30',
+  },
+  savingButton: {
+    backgroundColor: '#999999',
+  },
+  startButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+    paddingTop: 12,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  activityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  activityIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(230, 81, 0, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  activityName: {
+    fontSize: 18,
+    fontWeight: '500',
+    color: '#1A1A1A',
+  },
+  cancelBtn: {
+    marginTop: 16,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  cancelText: {
+    color: '#666666',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+});

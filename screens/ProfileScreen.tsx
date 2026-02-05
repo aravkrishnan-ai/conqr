@@ -1,657 +1,396 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, TextInput, Alert } from 'react-native';
-import { ArrowLeft, User, Mail, Footprints, PersonStanding, Bike, Map, Clock, Route, Pencil, Check, X } from 'lucide-react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, TextInput, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import { User, Flame, Activity, BarChart3, Pencil, Check, X } from 'lucide-react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import BottomTabBar from '../components/BottomTabBar';
 import { supabase } from '../lib/supabase';
 import { AuthService } from '../services/AuthService';
 import { ActivityService } from '../services/ActivityService';
-import { UserProfile, Activity } from '../lib/types';
+import { UserProfile, Activity as ActivityType } from '../lib/types';
 
-export default function ProfileScreen() {
-    const navigation = useNavigation<any>();
-    const [profile, setProfile] = useState<UserProfile | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
-    const [activities, setActivities] = useState<Activity[]>([]);
-    const [showAllActivities, setShowAllActivities] = useState(false);
-    const [stats, setStats] = useState<{
-        totalActivities: number;
-        totalDistance: number;
-        totalDuration: number;
-        byType: { [key: string]: { count: number; distance: number; duration: number } };
-    } | null>(null);
-
-    // Edit mode state
-    const [isEditing, setIsEditing] = useState(false);
-    const [editUsername, setEditUsername] = useState('');
-    const [editBio, setEditBio] = useState('');
-    const [saving, setSaving] = useState(false);
-
-    // Track if initial load has completed to prevent double-fetching
-    const initialLoadComplete = React.useRef(false);
-    const isFetching = React.useRef(false);
-
-    const fetchData = useCallback(async (showRefreshing = false) => {
-        // Prevent concurrent fetches
-        if (isFetching.current) {
-            return;
-        }
-        isFetching.current = true;
-
-        if (showRefreshing) setRefreshing(true);
-        try {
-            const p = await AuthService.getCurrentProfile();
-            setProfile(p);
-
-            // Fetch activities and stats
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.user) {
-                const userActivities = await ActivityService.getUserActivities(session.user.id);
-                setActivities(userActivities);
-                // Pass activities to avoid double-fetching
-                const activityStats = await ActivityService.getActivityStats(session.user.id, userActivities);
-                setStats(activityStats);
-            }
-        } catch (err) {
-            console.error('Fetch data error:', err);
-        } finally {
-            setLoading(false);
-            setRefreshing(false);
-            isFetching.current = false;
-        }
-    }, []);
-
-    // Initial load only
-    useEffect(() => {
-        if (!initialLoadComplete.current) {
-            initialLoadComplete.current = true;
-            fetchData();
-        }
-    }, [fetchData]);
-
-    // Refresh when screen comes into focus (but not on initial mount)
-    useFocusEffect(
-        useCallback(() => {
-            // Skip if this is the initial mount (useEffect will handle it)
-            if (loading) {
-                return;
-            }
-            // Refresh data when returning to this screen
-            fetchData();
-        }, [fetchData, loading])
-    );
-
-    const onRefresh = useCallback(() => {
-        fetchData(true);
-    }, [fetchData]);
-
-    const handleSignOut = async () => {
-        await supabase.auth.signOut();
-    };
-
-    const startEditing = () => {
-        setEditUsername(profile?.username || '');
-        setEditBio(profile?.bio || '');
-        setIsEditing(true);
-    };
-
-    const cancelEditing = () => {
-        setIsEditing(false);
-    };
-
-    const saveEdits = async () => {
-        const trimmed = editUsername.trim();
-        if (!trimmed) {
-            Alert.alert('Error', 'Username cannot be empty');
-            return;
-        }
-        if (trimmed.length < 3) {
-            Alert.alert('Error', 'Username must be at least 3 characters');
-            return;
-        }
-
-        setSaving(true);
-        try {
-            await AuthService.updateProfile({
-                username: trimmed,
-                bio: editBio.trim(),
-            });
-            setProfile(prev => prev ? { ...prev, username: trimmed, bio: editBio.trim() } : prev);
-            setIsEditing(false);
-        } catch (err: any) {
-            Alert.alert('Error', err.message || 'Failed to update profile');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    if (loading) {
-        return (
-            <View style={[styles.container, styles.center]}>
-                <ActivityIndicator color="#FC4C02" />
-            </View>
-        );
-    }
-
-    const formatDuration = (seconds: number) => {
-        const hours = Math.floor(seconds / 3600);
-        const mins = Math.floor((seconds % 3600) / 60);
-        if (hours > 0) return `${hours}h ${mins}m`;
-        return `${mins}m`;
-    };
-
-    const formatDistance = (meters: number) => {
-        if (meters >= 1000) return `${(meters / 1000).toFixed(2)} km`;
-        return `${Math.round(meters)} m`;
-    };
-
-    const getActivityIcon = (type: string) => {
-        switch (type) {
-            case 'RUN': return <PersonStanding color="#FC4C02" size={20} />;
-            case 'RIDE': return <Bike color="#FC4C02" size={20} />;
-            default: return <Footprints color="#FC4C02" size={20} />;
-        }
-    };
-
-    const formatDate = (timestamp: number) => {
-        const date = new Date(timestamp);
-        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    };
-
-    return (
-        <SafeAreaView style={styles.container}>
-            <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
-                    <ArrowLeft color="#fff" size={24} />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Profile</Text>
-                {isEditing ? (
-                    <View style={styles.editActions}>
-                        <TouchableOpacity onPress={cancelEditing} style={styles.editActionBtn}>
-                            <X color="#71717a" size={20} />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={saveEdits} disabled={saving} style={styles.editActionBtn}>
-                            {saving ? (
-                                <ActivityIndicator size="small" color="#FC4C02" />
-                            ) : (
-                                <Check color="#FC4C02" size={20} />
-                            )}
-                        </TouchableOpacity>
-                    </View>
-                ) : (
-                    <TouchableOpacity onPress={startEditing}>
-                        <Pencil color="#71717a" size={20} />
-                    </TouchableOpacity>
-                )}
-            </View>
-
-            <ScrollView
-                style={styles.scrollContent}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={onRefresh}
-                        tintColor="#22d3ee"
-                        colors={['#22d3ee']}
-                    />
-                }
-            >
-                <View style={styles.content}>
-                    <View style={styles.profileHeader}>
-                        {profile?.avatarUrl ? (
-                            <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
-                        ) : (
-                            <View style={styles.avatarPlaceholder}>
-                                <User color="#FC4C02" size={40} />
-                            </View>
-                        )}
-                        {isEditing ? (
-                            <View style={styles.editFields}>
-                                <TextInput
-                                    style={styles.editInput}
-                                    value={editUsername}
-                                    onChangeText={setEditUsername}
-                                    placeholder="Username"
-                                    placeholderTextColor="#52525b"
-                                    autoCapitalize="none"
-                                    autoCorrect={false}
-                                    maxLength={24}
-                                />
-                                <TextInput
-                                    style={[styles.editInput, styles.editBioInput]}
-                                    value={editBio}
-                                    onChangeText={setEditBio}
-                                    placeholder="Add a bio..."
-                                    placeholderTextColor="#52525b"
-                                    multiline
-                                    maxLength={120}
-                                />
-                            </View>
-                        ) : (
-                            <>
-                                <Text style={styles.username}>{profile?.username || 'Conqueror'}</Text>
-                                {profile?.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
-                            </>
-                        )}
-                    </View>
-
-                    {/* Activity Stats */}
-                    {stats && stats.totalActivities > 0 && (
-                        <View style={styles.statsSection}>
-                            <Text style={styles.sectionTitle}>Your Stats</Text>
-                            <View style={styles.statsGrid}>
-                                <View style={styles.statCard}>
-                                    <Route color="#FC4C02" size={24} />
-                                    <Text style={styles.statValue}>{formatDistance(stats.totalDistance)}</Text>
-                                    <Text style={styles.statLabel}>Total Distance</Text>
-                                </View>
-                                <View style={styles.statCard}>
-                                    <Clock color="#FC4C02" size={24} />
-                                    <Text style={styles.statValue}>{formatDuration(stats.totalDuration)}</Text>
-                                    <Text style={styles.statLabel}>Total Time</Text>
-                                </View>
-                                <View style={styles.statCard}>
-                                    <Map color="#FC4C02" size={24} />
-                                    <Text style={styles.statValue}>{stats.totalActivities}</Text>
-                                    <Text style={styles.statLabel}>Activities</Text>
-                                </View>
-                            </View>
-
-                            {/* Activity Type Breakdown */}
-                            {Object.keys(stats.byType).length > 0 && (
-                                <View style={styles.typeBreakdown}>
-                                    {stats.byType['WALK'] && (
-                                        <View style={styles.typeRow}>
-                                            <View style={styles.typeIconContainer}>
-                                                <Footprints color="#FC4C02" size={16} />
-                                            </View>
-                                            <Text style={styles.typeName}>Walks</Text>
-                                            <Text style={styles.typeCount}>{stats.byType['WALK'].count}</Text>
-                                            <Text style={styles.typeDistance}>{formatDistance(stats.byType['WALK'].distance)}</Text>
-                                        </View>
-                                    )}
-                                    {stats.byType['RUN'] && (
-                                        <View style={styles.typeRow}>
-                                            <View style={styles.typeIconContainer}>
-                                                <PersonStanding color="#FC4C02" size={16} />
-                                            </View>
-                                            <Text style={styles.typeName}>Runs</Text>
-                                            <Text style={styles.typeCount}>{stats.byType['RUN'].count}</Text>
-                                            <Text style={styles.typeDistance}>{formatDistance(stats.byType['RUN'].distance)}</Text>
-                                        </View>
-                                    )}
-                                    {stats.byType['RIDE'] && (
-                                        <View style={styles.typeRow}>
-                                            <View style={styles.typeIconContainer}>
-                                                <Bike color="#FC4C02" size={16} />
-                                            </View>
-                                            <Text style={styles.typeName}>Rides</Text>
-                                            <Text style={styles.typeCount}>{stats.byType['RIDE'].count}</Text>
-                                            <Text style={styles.typeDistance}>{formatDistance(stats.byType['RIDE'].distance)}</Text>
-                                        </View>
-                                    )}
-                                </View>
-                            )}
-                        </View>
-                    )}
-
-                    {/* Activity History */}
-                    <View style={styles.historySection}>
-                        <Text style={styles.sectionTitle}>Activity History</Text>
-                        {activities.length === 0 ? (
-                            <View style={styles.emptyState}>
-                                <Footprints color="#52525b" size={40} />
-                                <Text style={styles.emptyText}>No activities yet</Text>
-                                <Text style={styles.emptyHint}>Start conquering to see your history!</Text>
-                            </View>
-                        ) : (
-                            <>
-                                {(showAllActivities ? activities : activities.slice(0, 5)).map((activity) => (
-                                    <View key={activity.id} style={styles.activityCard}>
-                                        <View style={styles.activityIcon}>
-                                            {getActivityIcon(activity.type)}
-                                        </View>
-                                        <View style={styles.activityInfo}>
-                                            <Text style={styles.activityType}>{activity.type}</Text>
-                                            <Text style={styles.activityDate}>{formatDate(activity.startTime)}</Text>
-                                        </View>
-                                        <View style={styles.activityStats}>
-                                            <Text style={styles.activityDistance}>{formatDistance(activity.distance)}</Text>
-                                            <Text style={styles.activityDuration}>{formatDuration(activity.duration)}</Text>
-                                        </View>
-                                        {activity.territoryId && (
-                                            <View style={styles.territoryBadge}>
-                                                <Map color="#FC4C02" size={12} />
-                                            </View>
-                                        )}
-                                    </View>
-                                ))
-                                }
-                                {activities.length > 5 && (
-                                    <TouchableOpacity
-                                        style={styles.showMoreButton}
-                                        onPress={() => setShowAllActivities(!showAllActivities)}
-                                    >
-                                        <Text style={styles.showMoreText}>
-                                            {showAllActivities ? 'Show Less' : `Show All (${activities.length})`}
-                                        </Text>
-                                    </TouchableOpacity>
-                                )}
-                            </>
-                        )}
-                    </View>
-
-                    <View style={styles.infoSection}>
-                        <View style={styles.infoRow}>
-                            <Mail color="#71717a" size={20} />
-                            <Text style={styles.infoText}>{profile?.email || 'No email linked'}</Text>
-                        </View>
-                    </View>
-
-                    <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-                        <Text style={styles.signOutText}>Sign Out</Text>
-                    </TouchableOpacity>
-                </View>
-            </ScrollView>
-        </SafeAreaView>
-    );
+interface ProfileScreenProps {
+  navigation: any;
 }
 
-// Nike/Strava-inspired color palette
-const COLORS = {
-    primary: '#FC4C02',
-    background: '#000000',
-    card: '#111111',
-    border: '#1A1A1A',
-    text: '#FFFFFF',
-    textSecondary: '#888888',
-    textMuted: '#555555',
-};
+export default function ProfileScreen({ navigation }: ProfileScreenProps) {
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [activities, setActivities] = useState<ActivityType[]>([]);
+  const [stats, setStats] = useState<{
+    totalActivities: number;
+    totalDistance: number;
+    totalDuration: number;
+    byType: { [key: string]: { count: number; distance: number; duration: number } };
+  } | null>(null);
 
-// Legacy aliases for minimal changes
-const STRAVA_ORANGE = COLORS.primary;
-const STRAVA_BG = COLORS.background;
-const STRAVA_CARD = COLORS.card;
-const STRAVA_BORDER = COLORS.border;
-const STRAVA_TEXT = COLORS.text;
-const STRAVA_TEXT_SECONDARY = COLORS.textSecondary;
+  const [isEditing, setIsEditing] = useState(false);
+  const [editUsername, setEditUsername] = useState('');
+  const [editBio, setEditBio] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const initialLoadComplete = React.useRef(false);
+  const isFetching = React.useRef(false);
+
+  const fetchData = useCallback(async (showRefreshing = false) => {
+    if (isFetching.current) return;
+    isFetching.current = true;
+
+    if (showRefreshing) setRefreshing(true);
+    try {
+      const p = await AuthService.getCurrentProfile();
+      setProfile(p);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const userActivities = await ActivityService.getUserActivities(session.user.id);
+        setActivities(userActivities);
+        const activityStats = await ActivityService.getActivityStats(session.user.id, userActivities);
+        setStats(activityStats);
+      }
+    } catch (err) {
+      console.error('Fetch data error:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+      isFetching.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!initialLoadComplete.current) {
+      initialLoadComplete.current = true;
+      fetchData();
+    }
+  }, [fetchData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (loading) return;
+      fetchData();
+    }, [fetchData, loading])
+  );
+
+  const onRefresh = useCallback(() => {
+    fetchData(true);
+  }, [fetchData]);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+  };
+
+  const startEditing = () => {
+    setEditUsername(profile?.username || '');
+    setEditBio(profile?.bio || '');
+    setIsEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setIsEditing(false);
+  };
+
+  const saveEdits = async () => {
+    const trimmed = editUsername.trim();
+    if (!trimmed) {
+      Alert.alert('Error', 'Username cannot be empty');
+      return;
+    }
+    if (trimmed.length < 3) {
+      Alert.alert('Error', 'Username must be at least 3 characters');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await AuthService.updateProfile({
+        username: trimmed,
+        bio: editBio.trim(),
+      });
+      setProfile(prev => prev ? { ...prev, username: trimmed, bio: editBio.trim() } : prev);
+      setIsEditing(false);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to update profile');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTabPress = (tab: 'home' | 'record' | 'profile') => {
+    if (tab === 'home') {
+      navigation.navigate('Home');
+    } else if (tab === 'record') {
+      navigation.navigate('Record');
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator color="#E65100" />
+      </View>
+    );
+  }
+
+  const streak = 0;
+
+  return (
+    <View style={styles.container}>
+      <StatusBar style="dark" />
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        <ScrollView
+          style={styles.scrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#E65100"
+              colors={['#E65100']}
+            />
+          }
+        >
+          <View style={styles.content}>
+            <View style={styles.header}>
+              {isEditing ? (
+                <View style={styles.editActions}>
+                  <TouchableOpacity onPress={cancelEditing} style={styles.editActionBtn}>
+                    <X color="#666666" size={20} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={saveEdits} disabled={saving} style={styles.editActionBtn}>
+                    {saving ? (
+                      <ActivityIndicator size="small" color="#E65100" />
+                    ) : (
+                      <Check color="#E65100" size={20} />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity onPress={startEditing} style={styles.editBtn}>
+                  <Pencil color="#666666" size={18} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <View style={styles.profileSection}>
+              <View style={styles.avatarContainer}>
+                {profile?.avatarUrl ? (
+                  <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
+                ) : (
+                  <View style={styles.avatarPlaceholder}>
+                    <User color="#E65100" size={40} />
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.userInfo}>
+                {isEditing ? (
+                  <TextInput
+                    style={styles.editInput}
+                    value={editUsername}
+                    onChangeText={setEditUsername}
+                    placeholder="Username"
+                    placeholderTextColor="#999999"
+                    autoCapitalize="none"
+                    maxLength={24}
+                  />
+                ) : (
+                  <Text style={styles.username}>{profile?.username || 'your_username'}</Text>
+                )}
+                <Text style={styles.runsCount}>
+                  runs{'\n'}{stats?.totalActivities || 0}
+                </Text>
+              </View>
+
+              <View style={styles.streakContainer}>
+                <Flame color="#FF6B00" size={20} fill="#FF6B00" />
+                <Text style={styles.streakCount}>{streak}</Text>
+              </View>
+            </View>
+
+            {activities.length === 0 && (
+              <Text style={styles.emptyMessage}>do your first run !</Text>
+            )}
+
+            <View style={styles.dashboardSection}>
+              <Text style={styles.sectionTitle}>Dashboard</Text>
+              
+              <TouchableOpacity style={styles.dashboardButton}>
+                <Activity color="#1A1A1A" size={20} />
+                <Text style={styles.dashboardButtonText}>your runs</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.dashboardButton}>
+                <BarChart3 color="#1A1A1A" size={20} />
+                <Text style={styles.dashboardButtonText}>statistics</Text>
+              </TouchableOpacity>
+            </View>
+
+            {isEditing && (
+              <View style={styles.bioSection}>
+                <TextInput
+                  style={styles.bioInput}
+                  value={editBio}
+                  onChangeText={setEditBio}
+                  placeholder="Add a bio..."
+                  placeholderTextColor="#999999"
+                  multiline
+                  maxLength={120}
+                />
+              </View>
+            )}
+
+            <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+              <Text style={styles.signOutText}>Sign Out</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+      
+      <BottomTabBar activeTab="profile" onTabPress={handleTabPress} />
+    </View>
+  );
+}
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: STRAVA_BG,
-    },
-    center: {
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: 16,
-        paddingTop: 8,
-        borderBottomWidth: 1,
-        borderBottomColor: STRAVA_BORDER,
-    },
-    headerTitle: {
-        color: STRAVA_TEXT,
-        fontSize: 18,
-        fontWeight: '700',
-    },
-    editActions: {
-        flexDirection: 'row',
-        gap: 16,
-    },
-    editActionBtn: {
-        padding: 4,
-    },
-    scrollContent: {
-        flex: 1,
-    },
-    content: {
-        padding: 20,
-        alignItems: 'center',
-    },
-    profileHeader: {
-        alignItems: 'center',
-        marginBottom: 28,
-    },
-    avatarPlaceholder: {
-        width: 96,
-        height: 96,
-        borderRadius: 48,
-        backgroundColor: 'rgba(252, 76, 2, 0.15)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 16,
-    },
-    avatar: {
-        width: 96,
-        height: 96,
-        borderRadius: 48,
-        marginBottom: 16,
-    },
-    username: {
-        color: STRAVA_TEXT,
-        fontSize: 24,
-        fontWeight: '700',
-    },
-    bio: {
-        color: STRAVA_TEXT_SECONDARY,
-        fontSize: 14,
-        marginTop: 6,
-        textAlign: 'center',
-    },
-    editFields: {
-        width: '100%',
-        maxWidth: 280,
-        gap: 12,
-    },
-    editInput: {
-        backgroundColor: STRAVA_CARD,
-        borderWidth: 1,
-        borderColor: STRAVA_BORDER,
-        borderRadius: 8,
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-        color: STRAVA_TEXT,
-        fontSize: 16,
-        textAlign: 'center',
-    },
-    editBioInput: {
-        height: 60,
-        textAlignVertical: 'top',
-        textAlign: 'left',
-    },
-    sectionTitle: {
-        color: STRAVA_TEXT,
-        fontSize: 13,
-        fontWeight: '600',
-        marginBottom: 12,
-        alignSelf: 'flex-start',
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
-    },
-    statsSection: {
-        width: '100%',
-        marginBottom: 24,
-    },
-    statsGrid: {
-        flexDirection: 'row',
-        gap: 10,
-    },
-    statCard: {
-        flex: 1,
-        backgroundColor: STRAVA_CARD,
-        borderRadius: 12,
-        padding: 14,
-        alignItems: 'center',
-    },
-    statValue: {
-        color: STRAVA_TEXT,
-        fontSize: 18,
-        fontWeight: '700',
-        marginTop: 8,
-    },
-    statLabel: {
-        color: STRAVA_TEXT_SECONDARY,
-        fontSize: 11,
-        marginTop: 4,
-        textTransform: 'uppercase',
-        letterSpacing: 0.3,
-    },
-    typeBreakdown: {
-        marginTop: 12,
-        backgroundColor: STRAVA_CARD,
-        borderRadius: 12,
-        padding: 14,
-    },
-    typeRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 10,
-        borderBottomWidth: 1,
-        borderBottomColor: STRAVA_BORDER,
-    },
-    typeIconContainer: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        backgroundColor: 'rgba(252, 76, 2, 0.15)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 12,
-    },
-    typeName: {
-        flex: 1,
-        color: STRAVA_TEXT,
-        fontSize: 15,
-        fontWeight: '500',
-    },
-    typeCount: {
-        color: STRAVA_TEXT_SECONDARY,
-        fontSize: 14,
-        marginRight: 16,
-    },
-    typeDistance: {
-        color: STRAVA_ORANGE,
-        fontSize: 14,
-        fontWeight: '600',
-        minWidth: 70,
-        textAlign: 'right',
-    },
-    historySection: {
-        width: '100%',
-        marginBottom: 24,
-    },
-    emptyState: {
-        alignItems: 'center',
-        padding: 40,
-        backgroundColor: STRAVA_CARD,
-        borderRadius: 12,
-    },
-    emptyText: {
-        color: STRAVA_TEXT_SECONDARY,
-        fontSize: 16,
-        marginTop: 12,
-    },
-    emptyHint: {
-        color: '#606060',
-        fontSize: 14,
-        marginTop: 4,
-    },
-    activityCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: STRAVA_CARD,
-        borderRadius: 12,
-        padding: 14,
-        marginBottom: 8,
-    },
-    activityIcon: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: 'rgba(252, 76, 2, 0.15)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 14,
-    },
-    activityInfo: {
-        flex: 1,
-    },
-    activityType: {
-        color: STRAVA_TEXT,
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    activityDate: {
-        color: STRAVA_TEXT_SECONDARY,
-        fontSize: 13,
-        marginTop: 2,
-    },
-    activityStats: {
-        alignItems: 'flex-end',
-    },
-    activityDistance: {
-        color: STRAVA_ORANGE,
-        fontSize: 16,
-        fontWeight: '700',
-    },
-    activityDuration: {
-        color: STRAVA_TEXT_SECONDARY,
-        fontSize: 13,
-        marginTop: 2,
-    },
-    territoryBadge: {
-        marginLeft: 10,
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        backgroundColor: 'rgba(252, 76, 2, 0.15)',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    showMoreButton: {
-        marginTop: 8,
-        padding: 14,
-        backgroundColor: STRAVA_CARD,
-        borderRadius: 12,
-        alignItems: 'center',
-    },
-    showMoreText: {
-        color: STRAVA_ORANGE,
-        fontSize: 15,
-        fontWeight: '600',
-    },
-    infoSection: {
-        width: '100%',
-        backgroundColor: STRAVA_CARD,
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 16,
-    },
-    infoRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    infoText: {
-        color: STRAVA_TEXT,
-        fontSize: 15,
-    },
-    signOutButton: {
-        width: '100%',
-        padding: 16,
-        backgroundColor: 'rgba(255, 107, 107, 0.1)',
-        borderRadius: 12,
-        alignItems: 'center',
-        marginBottom: 40,
-    },
-    signOutText: {
-        color: '#FF6B6B',
-        fontSize: 16,
-        fontWeight: '600',
-    },
+  container: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  center: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  safeArea: {
+    flex: 1,
+  },
+  scrollContent: {
+    flex: 1,
+  },
+  content: {
+    padding: 20,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: 20,
+  },
+  editBtn: {
+    padding: 8,
+  },
+  editActions: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  editActionBtn: {
+    padding: 8,
+  },
+  profileSection: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 24,
+  },
+  avatarContainer: {
+    marginRight: 16,
+  },
+  avatarPlaceholder: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(230, 81, 0, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+  userInfo: {
+    flex: 1,
+  },
+  username: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1A1A1A',
+    marginBottom: 4,
+  },
+  runsCount: {
+    fontSize: 12,
+    color: '#666666',
+    textAlign: 'left',
+  },
+  streakContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  streakCount: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1A1A1A',
+  },
+  emptyMessage: {
+    fontSize: 14,
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 32,
+    fontStyle: 'italic',
+  },
+  dashboardSection: {
+    marginBottom: 32,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 16,
+  },
+  dashboardButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    gap: 12,
+  },
+  dashboardButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#1A1A1A',
+  },
+  editInput: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1A1A1A',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E65100',
+    paddingVertical: 4,
+    marginBottom: 8,
+  },
+  bioSection: {
+    marginBottom: 24,
+  },
+  bioInput: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    padding: 16,
+    color: '#1A1A1A',
+    fontSize: 14,
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  signOutButton: {
+    backgroundColor: '#F5F5F5',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  signOutText: {
+    color: '#FF3B30',
+    fontSize: 16,
+    fontWeight: '600',
+  },
 });

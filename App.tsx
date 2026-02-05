@@ -6,7 +6,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
 
-import GameScreen from './screens/GameScreen';
+import HomeScreen from './screens/HomeScreen';
+import RecordScreen from './screens/RecordScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import LandingScreen from './screens/LandingScreen';
 import ProfileSetupScreen from './screens/ProfileSetupScreen';
@@ -16,7 +17,6 @@ import { AuthContext } from './contexts/AuthContext';
 
 const Stack = createNativeStackNavigator();
 
-// Error Boundary to catch crashes
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { hasError: boolean; error: Error | null; errorInfo: string }
@@ -93,7 +93,6 @@ function AppNavigator() {
 
   useEffect(() => {
     const init = async () => {
-      // Check if app was opened via an auth callback deep link
       const initialUrl = await Linking.getInitialURL();
       if (initialUrl && initialUrl.includes('access_token')) {
         console.log('App opened via auth deep link:', initialUrl);
@@ -105,7 +104,6 @@ function AppNavigator() {
     };
     init();
 
-    // Listen for incoming deep links (handles auth callbacks when app is already running)
     const linkingSub = Linking.addEventListener('url', async (event) => {
       console.log('Deep link received:', event.url);
       if (event.url.includes('access_token') || event.url.includes('error')) {
@@ -113,7 +111,6 @@ function AppNavigator() {
       }
     });
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state changed:', event);
       if (session) {
@@ -139,8 +136,8 @@ function AppNavigator() {
 
   if (isLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#22d3ee" />
+      <View style={{ flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#E65100" />
       </View>
     );
   }
@@ -150,7 +147,7 @@ function AppNavigator() {
       <Stack.Navigator
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: '#000' },
+          contentStyle: { backgroundColor: '#FFFFFF' },
         }}
       >
         {!isAuthenticated ? (
@@ -159,7 +156,8 @@ function AppNavigator() {
           <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
         ) : (
           <>
-            <Stack.Screen name="Game" component={GameScreen} />
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="Record" component={RecordScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
           </>
         )}
@@ -174,7 +172,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
-        <StatusBar style="light" />
+        <StatusBar style="dark" />
         <NavigationContainer>
           <AppNavigator />
         </NavigationContainer>
