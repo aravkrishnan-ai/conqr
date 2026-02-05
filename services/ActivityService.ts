@@ -265,14 +265,53 @@ export const ActivityService = {
 
     /**
      * Get all activities for a user, sorted by start time (newest first)
+     * For current user: merges local + cloud data
+     * For other users: fetches directly from cloud (no local caching)
      */
-    async getUserActivities(userId: string): Promise<Activity[]> {
+    async getUserActivities(userId: string, isCurrentUser: boolean = true): Promise<Activity[]> {
         if (!userId) {
             console.warn('getUserActivities called without userId');
             return [];
         }
 
-        // Get local activities first
+        // For other users, fetch directly from cloud without local storage
+        if (!isCurrentUser) {
+            try {
+                const { data, error } = await supabase
+                    .from('activities')
+                    .select('*')
+                    .eq('user_id', userId)
+                    .order('start_time', { ascending: false });
+
+                if (error) {
+                    console.error('Failed to fetch other user activities:', error);
+                    return [];
+                }
+
+                if (data && data.length > 0) {
+                    return data.map((a: any) => ({
+                        id: a.id,
+                        userId: a.user_id,
+                        type: a.type || 'WALK',
+                        startTime: new Date(a.start_time).getTime(),
+                        endTime: a.end_time ? new Date(a.end_time).getTime() : undefined,
+                        distance: a.distance || 0,
+                        duration: a.duration || 0,
+                        polylines: this._parsePolylines(a.polylines),
+                        isSynced: true,
+                        territoryId: a.territory_id || undefined,
+                        averageSpeed: a.average_speed || undefined
+                    }));
+                }
+
+                return [];
+            } catch (err) {
+                console.error('Other user activities fetch error:', err);
+                return [];
+            }
+        }
+
+        // For current user: get local activities first
         const allLocal = await db.activities.toArray();
         let localActivities = allLocal.filter((a: Activity) => a.userId === userId);
 

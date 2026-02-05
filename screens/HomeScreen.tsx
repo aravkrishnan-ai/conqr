@@ -16,6 +16,7 @@ interface HomeScreenProps {
 export default function HomeScreen({ navigation }: HomeScreenProps) {
   const [location, setLocation] = React.useState<GPSPoint | null>(null);
   const [territories, setTerritories] = React.useState<Territory[]>([]);
+  const [currentUserId, setCurrentUserId] = React.useState<string | undefined>(undefined);
   const mapRef = React.useRef<MapContainerHandle>(null);
 
   React.useEffect(() => {
@@ -23,8 +24,10 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          const userTerritories = await TerritoryService.getUserTerritories(session.user.id);
-          setTerritories(userTerritories);
+          setCurrentUserId(session.user.id);
+          // Fetch all territories to show everyone's claimed areas
+          const allTerritories = await TerritoryService.getAllTerritories();
+          setTerritories(allTerritories);
         }
       } catch (err) {
         console.error('Failed to load territories:', err);
@@ -62,11 +65,13 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     };
   }, []);
 
-  const handleTabPress = (tab: 'home' | 'record' | 'profile') => {
+  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'search') => {
     if (tab === 'record') {
       navigation.navigate('Record');
     } else if (tab === 'profile') {
       navigation.navigate('Profile');
+    } else if (tab === 'search') {
+      navigation.navigate('Search');
     }
   };
 
@@ -80,6 +85,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             location={location}
             path={[]}
             territories={territories}
+            currentUserId={currentUserId}
             style={styles.map}
           />
         </View>

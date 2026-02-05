@@ -37,6 +37,7 @@ export interface Territory {
   id: string; // UUID
   name: string;
   ownerId: string;
+  ownerName?: string; // Username of the owner for display
   activityId: string;
   claimedAt: number;
   area: number; // square meters

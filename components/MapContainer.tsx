@@ -11,6 +11,7 @@ interface MapContainerProps {
     location: GPSPoint | null;
     path: GPSPoint[];
     territories?: Territory[];
+    currentUserId?: string;
     style?: any;
 }
 
@@ -76,6 +77,34 @@ const MAP_HTML = `
             100% { transform: scale(2); opacity: 0; }
         }
         .leaflet-control-attribution { display: none; }
+        /* Territory label styling */
+        .territory-label {
+            background: rgba(252, 76, 2, 0.9);
+            color: white;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 4px;
+            white-space: nowrap;
+            border: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        .territory-label::before {
+            content: '';
+            position: absolute;
+            bottom: -6px;
+            left: 50%;
+            margin-left: -6px;
+            border-width: 6px 6px 0;
+            border-style: solid;
+            border-color: rgba(252, 76, 2, 0.9) transparent transparent;
+        }
+        .other-user-territory {
+            background: rgba(100, 100, 100, 0.85);
+        }
+        .other-user-territory::before {
+            border-color: rgba(100, 100, 100, 0.85) transparent transparent;
+        }
         .loading-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -212,20 +241,44 @@ const MAP_HTML = `
                 }
             };
 
+            var currentUserId = null;
+            window.setCurrentUser = function(userId) {
+                currentUserId = userId;
+            };
+
             window.updateTerritories = function(territories) {
                 if (!map) return;
                 territoryLayers.forEach(function(l) { map.removeLayer(l); });
                 territoryLayers = [];
                 territories.forEach(function(t) {
                     if (t.polygon && t.polygon.length > 2) {
+                        var isOwn = currentUserId && t.ownerId === currentUserId;
+                        var color = isOwn ? '#FC4C02' : '#888888';
+
                         var poly = L.polygon(t.polygon, {
-                            color: '#FC4C02',
+                            color: color,
                             weight: 2,
                             opacity: 0.8,
-                            fillColor: '#FC4C02',
-                            fillOpacity: 0.15
+                            fillColor: color,
+                            fillOpacity: isOwn ? 0.2 : 0.12
                         }).addTo(map);
                         territoryLayers.push(poly);
+
+                        // Add label with owner name if available
+                        if (t.ownerName && t.center) {
+                            var labelClass = isOwn ? 'territory-label' : 'territory-label other-user-territory';
+                            var labelText = isOwn ? 'Your Territory' : t.ownerName + "'s territory";
+                            var label = L.marker([t.center[0], t.center[1]], {
+                                icon: L.divIcon({
+                                    className: '',
+                                    html: '<div class="' + labelClass + '">' + labelText + '</div>',
+                                    iconSize: [100, 20],
+                                    iconAnchor: [50, 30]
+                                }),
+                                interactive: false
+                            }).addTo(map);
+                            territoryLayers.push(label);
+                        }
                     }
                 });
             };
@@ -236,7 +289,7 @@ const MAP_HTML = `
 `;
 
 function MapContainerComponent(
-    { location, path, territories = [], style }: MapContainerProps,
+    { location, path, territories = [], currentUserId, style }: MapContainerProps,
     ref: React.Ref<MapContainerHandle>
 ) {
     const webViewRef = React.useRef<WebView>(null);
@@ -314,6 +367,12 @@ function MapContainerComponent(
         }
     }, [path, isReady, injectScript]);
 
+    // Set current user ID
+    React.useEffect(() => {
+        if (!isReady || !currentUserId) return;
+        injectScript(`window.setCurrentUser && window.setCurrentUser('${currentUserId}')`);
+    }, [currentUserId, isReady, injectScript]);
+
     // Update territories
     React.useEffect(() => {
         if (!isReady || !territories) return;
@@ -321,12 +380,15 @@ function MapContainerComponent(
         const validTerritories = territories.filter(t =>
             t && t.id && Array.isArray(t.polygon) && t.polygon.length > 2
         );
-        const key = validTerritories.map(t => t.id).join(',');
+        const key = validTerritories.map(t => `${t.id}-${t.ownerName || ''}`).join(',');
         if (key === lastTerritoriesRef.current) return;
 
         lastTerritoriesRef.current = key;
         const data = JSON.stringify(validTerritories.map(t => ({
             id: t.id,
+            ownerId: t.ownerId,
+            ownerName: t.ownerName || null,
+            center: t.center ? [t.center.lat, t.center.lng] : null,
             polygon: t.polygon
                 .filter(c => Array.isArray(c) && c.length >= 2 && !isNaN(c[0]) && !isNaN(c[1]))
                 .map(c => [c[1], c[0]])

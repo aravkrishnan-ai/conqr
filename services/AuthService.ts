@@ -274,5 +274,79 @@ export const AuthService = {
         }
 
         return null;
+    },
+
+    /**
+     * Search for users by username (partial match)
+     * Returns only public info (no email or sensitive data)
+     */
+    async searchUsers(query: string): Promise<UserProfile[]> {
+        if (!query || query.trim().length < 2) {
+            return [];
+        }
+
+        try {
+            const { data, error } = await supabase
+                .from('users')
+                .select('id, username, bio, avatar_url, created_at')
+                .ilike('username', `%${query.trim()}%`)
+                .limit(20);
+
+            if (error) {
+                console.error('User search error:', error);
+                return [];
+            }
+
+            if (data) {
+                return data.map(user => ({
+                    id: user.id,
+                    username: user.username || '',
+                    bio: user.bio || '',
+                    avatarUrl: user.avatar_url || undefined,
+                    createdAt: user.created_at ? new Date(user.created_at).getTime() : Date.now()
+                }));
+            }
+
+            return [];
+        } catch (err) {
+            console.error('Search users error:', err);
+            return [];
+        }
+    },
+
+    /**
+     * Get a user's public profile by ID
+     * Returns only public info (no email or sensitive data)
+     */
+    async getUserProfile(userId: string): Promise<UserProfile | null> {
+        if (!userId) return null;
+
+        try {
+            const { data, error } = await supabase
+                .from('users')
+                .select('id, username, bio, avatar_url, created_at')
+                .eq('id', userId)
+                .single();
+
+            if (error) {
+                console.error('Get user profile error:', error);
+                return null;
+            }
+
+            if (data) {
+                return {
+                    id: data.id,
+                    username: data.username || '',
+                    bio: data.bio || '',
+                    avatarUrl: data.avatar_url || undefined,
+                    createdAt: data.created_at ? new Date(data.created_at).getTime() : Date.now()
+                };
+            }
+
+            return null;
+        } catch (err) {
+            console.error('Get user profile error:', err);
+            return null;
+        }
     }
 };

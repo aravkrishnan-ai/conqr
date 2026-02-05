@@ -154,9 +154,13 @@ export const TerritoryService = {
         const localTerritories = await db.territories.toArray();
 
         try {
+            // Fetch territories with owner usernames
             const { data, error } = await supabase
                 .from('territories')
-                .select('*')
+                .select(`
+                    *,
+                    users:owner_id (username)
+                `)
                 .order('claimed_at', { ascending: false })
                 .limit(100);
 
@@ -167,7 +171,13 @@ export const TerritoryService = {
 
             if (data && data.length > 0) {
                 return data
-                    .map(mapCloudTerritory)
+                    .map((t: any) => {
+                        const territory = mapCloudTerritory(t);
+                        if (territory && t.users?.username) {
+                            territory.ownerName = t.users.username;
+                        }
+                        return territory;
+                    })
                     .filter((t): t is Territory => t !== null);
             }
 

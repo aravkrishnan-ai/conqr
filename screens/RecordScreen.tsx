@@ -2,7 +2,7 @@ import * as React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Modal, Animated, Easing, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Footprints, Bike, PersonStanding } from 'lucide-react-native';
+import { Footprints, Bike, PersonStanding, Trophy, MapPin, Clock, Gauge, Map, X } from 'lucide-react-native';
 import MapContainer, { MapContainerHandle } from '../components/MapContainer';
 import BottomTabBar from '../components/BottomTabBar';
 import { LocationService } from '../services/LocationService';
@@ -32,6 +32,15 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
   const [elapsedTime, setElapsedTime] = React.useState(0);
   const [currentSpeed, setCurrentSpeed] = React.useState(0);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [successModal, setSuccessModal] = React.useState<{
+    visible: boolean;
+    title: string;
+    distance: string;
+    duration: string;
+    pace: string;
+    territory?: string;
+    message?: string;
+  }>({ visible: false, title: '', distance: '', duration: '', pace: '' });
 
   const mapRef = React.useRef<MapContainerHandle>(null);
   const isTrackingRef = React.useRef(false);
@@ -274,23 +283,23 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
           const paceFormatted = averageSpeed > 0 ? ActivityService.calculatePace(averageSpeed) : '--:--';
 
           if (savedTerritory) {
-            Alert.alert(
-              "Territory Conquered!",
-              `${currentActivityType} completed!\n\n` +
-              `Distance: ${(distance / 1000).toFixed(2)} km\n` +
-              `Duration: ${durationFormatted}\n` +
-              `Pace: ${paceFormatted} /km\n` +
-              `Territory: ${(savedTerritory.area / 1000000).toFixed(4)} km²`
-            );
+            setSuccessModal({
+              visible: true,
+              title: 'Territory Conquered!',
+              distance: `${(distance / 1000).toFixed(2)} km`,
+              duration: durationFormatted,
+              pace: `${paceFormatted} /km`,
+              territory: `${(savedTerritory.area / 1000000).toFixed(4)} km²`
+            });
           } else {
-            Alert.alert(
-              "Activity Saved!",
-              `${currentActivityType} completed!\n\n` +
-              `Distance: ${(distance / 1000).toFixed(2)} km\n` +
-              `Duration: ${durationFormatted}\n` +
-              `Pace: ${paceFormatted} /km\n\n` +
-              `Close your loop to claim territory!`
-            );
+            setSuccessModal({
+              visible: true,
+              title: 'Activity Saved!',
+              distance: `${(distance / 1000).toFixed(2)} km`,
+              duration: durationFormatted,
+              pace: `${paceFormatted} /km`,
+              message: 'Close your loop to claim territory!'
+            });
           }
         } else {
           Alert.alert("Activity Too Short", "Move more to record your activity.");
@@ -345,11 +354,13 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
     return `${mins}.${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleTabPress = (tab: 'home' | 'record' | 'profile') => {
+  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'search') => {
     if (tab === 'home') {
       navigation.navigate('Home');
     } else if (tab === 'profile') {
       navigation.navigate('Profile');
+    } else if (tab === 'search') {
+      navigation.navigate('Search');
     }
   };
 
@@ -400,7 +411,7 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
               activeOpacity={0.8}
             >
               <Text style={styles.startButtonText}>
-                {isSaving ? 'saving...' : isTracking ? 'stop run' : 'start run'}
+                {isSaving ? 'saving...' : isTracking ? 'stop activity' : 'start activity'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -462,6 +473,66 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      <Modal
+        visible={successModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSuccessModal(prev => ({ ...prev, visible: false }))}
+      >
+        <View style={styles.successModalBackdrop}>
+          <View style={styles.successModalContainer}>
+            <TouchableOpacity
+              style={styles.successModalClose}
+              onPress={() => setSuccessModal(prev => ({ ...prev, visible: false }))}
+            >
+              <X color="#999999" size={24} />
+            </TouchableOpacity>
+
+            <View style={styles.successIconContainer}>
+              <Trophy color="#FFFFFF" size={32} />
+            </View>
+
+            <Text style={styles.successTitle}>{successModal.title}</Text>
+
+            <View style={styles.successStatsGrid}>
+              <View style={styles.successStatBox}>
+                <MapPin color="#E65100" size={20} />
+                <Text style={styles.successStatValue}>{successModal.distance}</Text>
+                <Text style={styles.successStatLabel}>Distance</Text>
+              </View>
+              <View style={styles.successStatBox}>
+                <Clock color="#E65100" size={20} />
+                <Text style={styles.successStatValue}>{successModal.duration}</Text>
+                <Text style={styles.successStatLabel}>Duration</Text>
+              </View>
+              <View style={styles.successStatBox}>
+                <Gauge color="#E65100" size={20} />
+                <Text style={styles.successStatValue}>{successModal.pace}</Text>
+                <Text style={styles.successStatLabel}>Pace</Text>
+              </View>
+              {successModal.territory && (
+                <View style={styles.successStatBox}>
+                  <Map color="#E65100" size={20} />
+                  <Text style={styles.successStatValue}>{successModal.territory}</Text>
+                  <Text style={styles.successStatLabel}>Territory</Text>
+                </View>
+              )}
+            </View>
+
+            {successModal.message && (
+              <Text style={styles.successMessage}>{successModal.message}</Text>
+            )}
+
+            <TouchableOpacity
+              style={styles.successDoneButton}
+              onPress={() => setSuccessModal(prev => ({ ...prev, visible: false }))}
+            >
+              <Text style={styles.successDoneText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -598,5 +669,93 @@ const styles = StyleSheet.create({
     color: '#666666',
     fontSize: 16,
     fontWeight: '500',
+  },
+  successModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  successModalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+    position: 'relative' as const,
+  },
+  successModalClose: {
+    position: 'absolute' as const,
+    top: 16,
+    right: 16,
+    padding: 4,
+  },
+  successIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#E65100',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  successTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 20,
+    textAlign: 'center' as const,
+  },
+  successStatsGrid: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 20,
+    width: '100%',
+  },
+  successStatBox: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+    minWidth: 100,
+    flex: 1,
+    maxWidth: '48%',
+  },
+  successStatValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginTop: 6,
+  },
+  successStatLabel: {
+    fontSize: 11,
+    color: '#666666',
+    marginTop: 2,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+  },
+  successMessage: {
+    fontSize: 14,
+    color: '#666666',
+    textAlign: 'center' as const,
+    marginBottom: 20,
+    fontStyle: 'italic' as const,
+  },
+  successDoneButton: {
+    backgroundColor: '#E65100',
+    paddingVertical: 14,
+    paddingHorizontal: 48,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+  },
+  successDoneText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { User, Flame, Activity, BarChart3, Pencil, Check, X } from 'lucide-react-native';
+import { User, Flame, Activity, BarChart3, Pencil, Check, X, ChevronRight, MapPin, Clock } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import BottomTabBar from '../components/BottomTabBar';
 import { supabase } from '../lib/supabase';
@@ -117,11 +117,13 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
     }
   };
 
-  const handleTabPress = (tab: 'home' | 'record' | 'profile') => {
+  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'search') => {
     if (tab === 'home') {
       navigation.navigate('Home');
     } else if (tab === 'record') {
       navigation.navigate('Record');
+    } else if (tab === 'search') {
+      navigation.navigate('Search');
     }
   };
 
@@ -213,17 +215,48 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
             )}
 
             <View style={styles.dashboardSection}>
-              <Text style={styles.sectionTitle}>Dashboard</Text>
-              
-              <TouchableOpacity style={styles.dashboardButton}>
-                <Activity color="#1A1A1A" size={20} />
-                <Text style={styles.dashboardButtonText}>your runs</Text>
-              </TouchableOpacity>
+              <Text style={styles.sectionTitle}>Your Activities</Text>
 
-              <TouchableOpacity style={styles.dashboardButton}>
-                <BarChart3 color="#1A1A1A" size={20} />
-                <Text style={styles.dashboardButtonText}>statistics</Text>
-              </TouchableOpacity>
+              {activities.length > 0 ? (
+                activities.slice(0, 10).map((activity) => (
+                  <TouchableOpacity
+                    key={activity.id}
+                    style={styles.activityCard}
+                    onPress={() => navigation.navigate('ActivityDetails', { activityId: activity.id })}
+                  >
+                    <View style={styles.activityIcon}>
+                      <Activity color="#E65100" size={20} />
+                    </View>
+                    <View style={styles.activityInfo}>
+                      <Text style={styles.activityType}>{activity.type}</Text>
+                      <View style={styles.activityStats}>
+                        <View style={styles.activityStat}>
+                          <MapPin color="#999999" size={12} />
+                          <Text style={styles.activityStatText}>
+                            {activity.distance < 1000
+                              ? `${Math.round(activity.distance)}m`
+                              : `${(activity.distance / 1000).toFixed(2)}km`}
+                          </Text>
+                        </View>
+                        <View style={styles.activityStat}>
+                          <Clock color="#999999" size={12} />
+                          <Text style={styles.activityStatText}>
+                            {Math.floor(activity.duration / 60)}min
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.activityDate}>
+                        {new Date(activity.startTime).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
+                      </Text>
+                    </View>
+                    <ChevronRight color="#CCCCCC" size={20} />
+                  </TouchableOpacity>
+                ))
+              ) : null}
             </View>
 
             {isEditing && (
@@ -346,19 +379,51 @@ const styles = StyleSheet.create({
     color: '#1A1A1A',
     marginBottom: 16,
   },
-  dashboardButton: {
+  activityCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F5F5F5',
-    padding: 16,
+    padding: 14,
     borderRadius: 12,
-    marginBottom: 12,
+    marginBottom: 10,
+  },
+  activityIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: 'rgba(230, 81, 0, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  activityInfo: {
+    flex: 1,
+  },
+  activityType: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1A1A1A',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  activityStats: {
+    flexDirection: 'row',
+    marginTop: 4,
     gap: 12,
   },
-  dashboardButtonText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#1A1A1A',
+  activityStat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  activityStatText: {
+    fontSize: 12,
+    color: '#666666',
+  },
+  activityDate: {
+    fontSize: 11,
+    color: '#999999',
+    marginTop: 4,
   },
   editInput: {
     fontSize: 18,
