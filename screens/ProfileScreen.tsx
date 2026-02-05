@@ -357,13 +357,24 @@ export default function ProfileScreen() {
     );
 }
 
-// Strava-inspired color palette
-const STRAVA_ORANGE = '#FC4C02';
-const STRAVA_BG = '#121212';
-const STRAVA_CARD = '#1E1E1E';
-const STRAVA_BORDER = '#2D2D2D';
-const STRAVA_TEXT = '#FFFFFF';
-const STRAVA_TEXT_SECONDARY = '#8E8E8E';
+// Nike/Strava-inspired color palette
+const COLORS = {
+    primary: '#FC4C02',
+    background: '#000000',
+    card: '#111111',
+    border: '#1A1A1A',
+    text: '#FFFFFF',
+    textSecondary: '#888888',
+    textMuted: '#555555',
+};
+
+// Legacy aliases for minimal changes
+const STRAVA_ORANGE = COLORS.primary;
+const STRAVA_BG = COLORS.background;
+const STRAVA_CARD = COLORS.card;
+const STRAVA_BORDER = COLORS.border;
+const STRAVA_TEXT = COLORS.text;
+const STRAVA_TEXT_SECONDARY = COLORS.textSecondary;
 
 const styles = StyleSheet.create({
     container: {

@@ -16,6 +16,16 @@ import { User, Check, Sparkles } from 'lucide-react-native';
 import { AuthService } from '../services/AuthService';
 import { useAuth } from '../contexts/AuthContext';
 
+const COLORS = {
+    primary: '#FC4C02',
+    background: '#000000',
+    card: '#111111',
+    border: '#222222',
+    text: '#FFFFFF',
+    textSecondary: '#888888',
+    textMuted: '#555555',
+};
+
 export default function ProfileSetupScreen() {
     const { setHasProfile, suggestedUsername, userAvatarUrl } = useAuth();
     const [username, setUsername] = useState('');
@@ -65,7 +75,7 @@ export default function ProfileSetupScreen() {
                             <Image source={{ uri: userAvatarUrl }} style={styles.avatar} />
                         ) : (
                             <View style={styles.avatarPlaceholder}>
-                                <User color="#22d3ee" size={36} />
+                                <User color={COLORS.primary} size={36} />
                             </View>
                         )}
                     </View>
@@ -77,7 +87,7 @@ export default function ProfileSetupScreen() {
                         <TextInput
                             style={styles.input}
                             placeholder="Enter username"
-                            placeholderTextColor="#52525b"
+                            placeholderTextColor={COLORS.textMuted}
                             value={username}
                             onChangeText={setUsername}
                             autoCapitalize="none"
@@ -90,7 +100,7 @@ export default function ProfileSetupScreen() {
                                 style={styles.suggestButton}
                                 onPress={() => setUsername(suggestedUsername)}
                             >
-                                <Sparkles color="#22d3ee" size={14} />
+                                <Sparkles color={COLORS.primary} size={14} />
                                 <Text style={styles.suggestText}>Use Google name</Text>
                             </TouchableOpacity>
                         )}
@@ -100,12 +110,13 @@ export default function ProfileSetupScreen() {
                         style={[styles.saveButton, loading && styles.disabledButton]}
                         onPress={handleSave}
                         disabled={loading}
+                        activeOpacity={0.8}
                     >
                         {loading ? (
-                            <ActivityIndicator color="#000" />
+                            <ActivityIndicator color="#fff" />
                         ) : (
                             <>
-                                <Check color="#000" size={20} />
+                                <Check color="#fff" size={20} />
                                 <Text style={styles.saveButtonText}>START CONQUERING</Text>
                             </>
                         )}
@@ -119,7 +130,7 @@ export default function ProfileSetupScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#000',
+        backgroundColor: COLORS.background,
     },
     keyboardView: {
         flex: 1,
@@ -131,49 +142,49 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     avatarSection: {
-        marginBottom: 24,
+        marginBottom: 32,
     },
     avatar: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        borderWidth: 2,
-        borderColor: '#22d3ee',
+        width: 88,
+        height: 88,
+        borderRadius: 44,
+        borderWidth: 3,
+        borderColor: COLORS.primary,
     },
     avatarPlaceholder: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        backgroundColor: '#22d3ee22',
+        width: 88,
+        height: 88,
+        borderRadius: 44,
+        backgroundColor: 'rgba(252, 76, 2, 0.15)',
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 2,
-        borderColor: '#22d3ee44',
+        borderColor: 'rgba(252, 76, 2, 0.3)',
     },
     title: {
         fontSize: 28,
-        fontWeight: '900',
-        color: '#fff',
+        fontWeight: '700',
+        color: COLORS.text,
         letterSpacing: -0.5,
     },
     subtitle: {
         fontSize: 15,
-        color: '#71717a',
-        marginTop: 6,
-        marginBottom: 32,
+        color: COLORS.textSecondary,
+        marginTop: 8,
+        marginBottom: 40,
     },
     inputWrapper: {
         width: '100%',
         maxWidth: 320,
-        marginBottom: 24,
+        marginBottom: 32,
     },
     input: {
-        backgroundColor: '#18181b',
+        backgroundColor: COLORS.card,
         borderWidth: 1,
-        borderColor: '#27272a',
+        borderColor: COLORS.border,
         borderRadius: 12,
-        padding: 16,
-        color: '#fff',
+        padding: 18,
+        color: COLORS.text,
         fontSize: 18,
         textAlign: 'center',
     },
@@ -182,17 +193,17 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 6,
-        marginTop: 10,
-        paddingVertical: 6,
+        marginTop: 12,
+        paddingVertical: 8,
     },
     suggestText: {
-        color: '#22d3ee',
-        fontSize: 13,
-        fontWeight: '500',
+        color: COLORS.primary,
+        fontSize: 14,
+        fontWeight: '600',
     },
     saveButton: {
-        backgroundColor: '#22d3ee',
-        borderRadius: 28,
+        backgroundColor: COLORS.primary,
+        borderRadius: 12,
         height: 56,
         width: '100%',
         maxWidth: 320,
@@ -200,19 +211,19 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 10,
-        shadowColor: '#22d3ee',
+        shadowColor: COLORS.primary,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
-        shadowRadius: 8,
+        shadowRadius: 12,
         elevation: 4,
     },
     disabledButton: {
         opacity: 0.7,
     },
     saveButtonText: {
-        color: '#000',
+        color: COLORS.text,
         fontSize: 16,
-        fontWeight: '900',
+        fontWeight: '700',
         letterSpacing: 1,
     },
 });

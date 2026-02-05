@@ -1,129 +1,268 @@
 import * as React from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, Animated, Easing } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MapPin, Route, Zap, Trophy } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { GoogleSignInButton } from '../components/GoogleSignInButton';
 import { StatusBar } from 'expo-status-bar';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
-// Strava-inspired color palette
-const STRAVA_ORANGE = '#FC4C02';
-const STRAVA_BG = '#121212';
+// Color palette
+const COLORS = {
+    primary: '#FC4C02',
+    background: '#000000',
+    text: '#FFFFFF',
+    textSecondary: '#999999',
+    textMuted: '#666666',
+};
 
 export default function LandingScreen() {
+    // Animated values for entrance animations
+    const fadeAnim = React.useRef(new Animated.Value(0)).current;
+    const slideAnim = React.useRef(new Animated.Value(30)).current;
+    const scaleAnim = React.useRef(new Animated.Value(0.9)).current;
+
+    React.useEffect(() => {
+        Animated.parallel([
+            Animated.timing(fadeAnim, {
+                toValue: 1,
+                duration: 800,
+                useNativeDriver: true,
+                easing: Easing.out(Easing.cubic),
+            }),
+            Animated.timing(slideAnim, {
+                toValue: 0,
+                duration: 800,
+                useNativeDriver: true,
+                easing: Easing.out(Easing.cubic),
+            }),
+            Animated.timing(scaleAnim, {
+                toValue: 1,
+                duration: 800,
+                useNativeDriver: true,
+                easing: Easing.out(Easing.cubic),
+            }),
+        ]).start();
+    }, [fadeAnim, slideAnim, scaleAnim]);
+
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={styles.container}>
             <StatusBar style="light" />
 
-            {/* Background glow */}
-            <View style={styles.glow} />
+            {/* Background gradient */}
+            <LinearGradient
+                colors={['#0a0a0a', '#000000', '#0a0a0a']}
+                style={styles.backgroundGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+            />
 
-            <View style={styles.content}>
-                <View style={styles.heroSection}>
-                    <View style={styles.logoContainer}>
-                        <MapPin size={44} color={STRAVA_ORANGE} strokeWidth={2.5} />
-                    </View>
-
-                    <Text style={styles.title}>CONQR</Text>
-                    <Text style={styles.tagline}>
-                        Walk, run, or ride to claim territory and dominate the map.
-                    </Text>
-                </View>
-
-                <View style={styles.authSection}>
-                    <GoogleSignInButton />
-                </View>
-
-                <View style={styles.featureRow}>
-                    <View style={styles.featureChip}>
-                        <Route size={16} color={STRAVA_ORANGE} />
-                        <Text style={styles.featureText}>Track Routes</Text>
-                    </View>
-                    <View style={styles.featureChip}>
-                        <Zap size={16} color={STRAVA_ORANGE} />
-                        <Text style={styles.featureText}>Claim Territory</Text>
-                    </View>
-                    <View style={styles.featureChip}>
-                        <Trophy size={16} color={STRAVA_ORANGE} />
-                        <Text style={styles.featureText}>Compete</Text>
-                    </View>
-                </View>
+            {/* Accent glow */}
+            <View style={styles.glowContainer}>
+                <LinearGradient
+                    colors={['rgba(252, 76, 2, 0.15)', 'rgba(252, 76, 2, 0.05)', 'transparent']}
+                    style={styles.glow}
+                    start={{ x: 0.5, y: 0 }}
+                    end={{ x: 0.5, y: 1 }}
+                />
             </View>
-        </SafeAreaView>
+
+            <SafeAreaView style={styles.safeArea}>
+                <View style={styles.content}>
+                    {/* Top spacer */}
+                    <View style={styles.topSpacer} />
+
+                    {/* Hero Section */}
+                    <Animated.View
+                        style={[
+                            styles.heroSection,
+                            {
+                                opacity: fadeAnim,
+                                transform: [
+                                    { translateY: slideAnim },
+                                    { scale: scaleAnim },
+                                ],
+                            },
+                        ]}
+                    >
+                        {/* Logo Mark */}
+                        <View style={styles.logoMark}>
+                            <View style={styles.logoInner}>
+                                <Text style={styles.logoLetter}>C</Text>
+                            </View>
+                        </View>
+
+                        {/* Brand Name */}
+                        <Text style={styles.brandName}>CONQR</Text>
+
+                        {/* Tagline */}
+                        <Text style={styles.tagline}>
+                            Claim your territory
+                        </Text>
+                    </Animated.View>
+
+                    {/* Value Props */}
+                    <Animated.View
+                        style={[
+                            styles.valueProps,
+                            {
+                                opacity: fadeAnim,
+                                transform: [{ translateY: slideAnim }],
+                            },
+                        ]}
+                    >
+                        <View style={styles.valueProp}>
+                            <View style={styles.valueDot} />
+                            <Text style={styles.valueText}>Track your runs, walks & rides</Text>
+                        </View>
+                        <View style={styles.valueProp}>
+                            <View style={styles.valueDot} />
+                            <Text style={styles.valueText}>Draw paths to claim territory</Text>
+                        </View>
+                        <View style={styles.valueProp}>
+                            <View style={styles.valueDot} />
+                            <Text style={styles.valueText}>Compete to dominate your city</Text>
+                        </View>
+                    </Animated.View>
+
+                    {/* Bottom Section */}
+                    <View style={styles.bottomSection}>
+                        {/* CTA */}
+                        <Animated.View
+                            style={[
+                                styles.ctaSection,
+                                {
+                                    opacity: fadeAnim,
+                                    transform: [{ translateY: slideAnim }],
+                                },
+                            ]}
+                        >
+                            <GoogleSignInButton />
+                        </Animated.View>
+
+                        {/* Footer */}
+                        <Animated.View style={[styles.footer, { opacity: fadeAnim }]}>
+                            <Text style={styles.footerText}>
+                                By continuing, you agree to our Terms of Service
+                            </Text>
+                        </Animated.View>
+                    </View>
+                </View>
+            </SafeAreaView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: STRAVA_BG,
+        backgroundColor: COLORS.background,
+    },
+    backgroundGradient: {
+        ...StyleSheet.absoluteFillObject,
+    },
+    glowContainer: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: height * 0.5,
+        overflow: 'hidden',
+    },
+    glow: {
+        width: width * 1.5,
+        height: height * 0.5,
+        borderRadius: width,
+        alignSelf: 'center',
+        marginTop: -height * 0.15,
+    },
+    safeArea: {
+        flex: 1,
     },
     content: {
         flex: 1,
-        padding: 24,
-        alignItems: 'center',
-        justifyContent: 'center',
+        paddingHorizontal: 32,
     },
-    glow: {
-        position: 'absolute',
-        top: -150,
-        left: width / 4,
-        width: width,
-        height: 450,
-        backgroundColor: 'rgba(252, 76, 2, 0.08)',
-        borderRadius: 225,
-        transform: [{ scaleX: 2 }],
-        zIndex: -1,
+    topSpacer: {
+        flex: 0.15,
     },
     heroSection: {
         alignItems: 'center',
-        marginBottom: 56,
     },
-    logoContainer: {
-        width: 88,
-        height: 88,
-        backgroundColor: 'rgba(252, 76, 2, 0.12)',
-        borderRadius: 44,
+    logoMark: {
+        width: 80,
+        height: 80,
+        borderRadius: 20,
+        backgroundColor: COLORS.primary,
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 28,
+        marginBottom: 24,
+        shadowColor: COLORS.primary,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.4,
+        shadowRadius: 24,
+        elevation: 12,
     },
-    title: {
-        fontSize: 56,
+    logoInner: {
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    logoLetter: {
+        fontSize: 42,
+        fontWeight: '700',
+        color: COLORS.text,
+        marginTop: -2,
+    },
+    brandName: {
+        fontSize: 48,
         fontWeight: '800',
-        color: '#FFFFFF',
-        letterSpacing: -1,
+        color: COLORS.text,
+        letterSpacing: 8,
+        marginBottom: 12,
     },
     tagline: {
-        fontSize: 17,
-        color: '#8E8E8E',
-        textAlign: 'center',
-        marginTop: 12,
-        lineHeight: 24,
-        maxWidth: 300,
+        fontSize: 18,
+        color: COLORS.textSecondary,
+        fontWeight: '500',
+        letterSpacing: 0.5,
     },
-    authSection: {
+    valueProps: {
+        marginTop: 48,
+        alignSelf: 'center',
+        gap: 16,
+    },
+    valueProp: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    valueDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: COLORS.primary,
+    },
+    valueText: {
+        fontSize: 16,
+        color: COLORS.textMuted,
+        fontWeight: '500',
+    },
+    bottomSection: {
+        flex: 1,
+        justifyContent: 'flex-end',
+        paddingBottom: 16,
+    },
+    ctaSection: {
         width: '100%',
         alignItems: 'center',
-        marginBottom: 56,
+        marginBottom: 24,
     },
-    featureRow: {
-        flexDirection: 'row',
-        gap: 10,
-    },
-    featureChip: {
-        flexDirection: 'row',
+    footer: {
         alignItems: 'center',
-        gap: 6,
-        backgroundColor: 'rgba(255, 255, 255, 0.06)',
-        borderRadius: 20,
-        paddingVertical: 10,
-        paddingHorizontal: 14,
     },
-    featureText: {
-        color: '#8E8E8E',
-        fontSize: 13,
-        fontWeight: '600',
+    footerText: {
+        fontSize: 12,
+        color: COLORS.textMuted,
+        textAlign: 'center',
     },
 });

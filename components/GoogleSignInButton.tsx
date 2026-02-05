@@ -49,17 +49,18 @@ export const GoogleSignInButton = () => {
                 style={[styles.button, loading && styles.buttonDisabled]}
                 onPress={handlePress}
                 disabled={loading}
+                activeOpacity={0.9}
             >
                 <View style={styles.content}>
                     {loading ? (
-                        <ActivityIndicator size="small" color="#4285F4" style={styles.loader} />
+                        <ActivityIndicator size="small" color="#000" style={styles.loader} />
                     ) : (
                         <View style={styles.logoContainer}>
                             <GoogleLogo />
                         </View>
                     )}
                     <Text style={styles.text}>
-                        {loading ? 'Signing in...' : 'Sign in with Google'}
+                        {loading ? 'Signing in...' : 'Continue with Google'}
                     </Text>
                 </View>
             </TouchableOpacity>
@@ -73,15 +74,19 @@ export const GoogleSignInButton = () => {
 const styles = StyleSheet.create({
     wrapper: {
         width: '100%',
-        maxWidth: 340,
         alignItems: 'center',
     },
     button: {
         backgroundColor: '#FFFFFF',
-        borderRadius: 28,
+        borderRadius: 12,
         paddingVertical: 16,
         paddingHorizontal: 24,
         width: '100%',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+        elevation: 4,
     },
     buttonDisabled: {
         opacity: 0.7,
@@ -92,20 +97,21 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     logoContainer: {
-        marginRight: 14,
+        marginRight: 12,
     },
     loader: {
-        marginRight: 14,
+        marginRight: 12,
     },
     text: {
-        color: '#1A1A1A',
-        fontSize: 17,
+        color: '#000000',
+        fontSize: 16,
         fontWeight: '600',
+        letterSpacing: 0.3,
     },
     errorText: {
-        color: '#FF6B6B',
+        color: '#FF4444',
         fontSize: 14,
-        marginTop: 12,
+        marginTop: 16,
         textAlign: 'center',
     },
 });

@@ -70,7 +70,16 @@
       "Bash(npx ngrok --version)",
       "Bash(unset:*)",
       "Bash(npm run:*)",
-      "Bash(npx eas-cli:*)"
+      "Bash(npx eas-cli:*)",
+      "Bash(git log:*)",
+      "Bash(npx jest:*)",
+      "Bash(tee:*)",
+      "WebFetch(domain:share.google)",
+      "WebFetch(domain:www.google.com)",
+      "WebSearch",
+      "WebFetch(domain:drive.google.com)",
+      "Bash(wc:*)",
+      "WebFetch(domain:www.figma.com)"
     ]
   }
 }
