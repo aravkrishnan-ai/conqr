@@ -1,10 +1,12 @@
 import React from 'react';
 import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import { Home, User, Users } from 'lucide-react-native';
+import { Home, User, Users, Trophy } from 'lucide-react-native';
+
+type TabName = 'home' | 'record' | 'profile' | 'search' | 'leaderboard';
 
 interface BottomTabBarProps {
-  activeTab: 'home' | 'record' | 'profile' | 'search';
-  onTabPress: (tab: 'home' | 'record' | 'profile' | 'search') => void;
+  activeTab: TabName;
+  onTabPress: (tab: TabName) => void;
 }
 
 export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProps) {
@@ -19,6 +21,18 @@ export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProp
           size={24}
           color={activeTab === 'home' ? '#E65100' : '#666666'}
           strokeWidth={activeTab === 'home' ? 2.5 : 2}
+        />
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.tab}
+        onPress={() => onTabPress('leaderboard')}
+        activeOpacity={0.7}
+      >
+        <Trophy
+          size={24}
+          color={activeTab === 'leaderboard' ? '#E65100' : '#666666'}
+          strokeWidth={activeTab === 'leaderboard' ? 2.5 : 2}
         />
       </TouchableOpacity>
 

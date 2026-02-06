@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, Text, StyleSheet, Dimensions, Animated, Easing } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, Animated, Easing, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GoogleSignInButton } from '../components/GoogleSignInButton';
 import { StatusBar } from 'expo-status-bar';
@@ -43,7 +43,11 @@ export default function LandingScreen() {
                                 },
                             ]}
                         >
-                            <Text style={styles.brandName}>Conqr</Text>
+                            <Image
+                                source={require('../assets/conqr-logo.png')}
+                                style={styles.logoImage}
+                                resizeMode="contain"
+                            />
                         </Animated.View>
                     </View>
 
@@ -84,12 +88,9 @@ const styles = StyleSheet.create({
     logoContainer: {
         alignItems: 'center',
     },
-    brandName: {
-        fontSize: 56,
-        fontWeight: '300',
-        color: '#FFFFFF',
-        fontStyle: 'italic',
-        letterSpacing: 2,
+    logoImage: {
+        width: 220,
+        height: 220,
     },
     bottomSection: {
         paddingBottom: 32,

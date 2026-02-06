@@ -5,6 +5,7 @@ import { GPSPoint, Territory } from '../lib/types';
 
 export interface MapContainerHandle {
     centerOnUser: () => void;
+    centerOnLocation: (lat: number, lng: number, zoom?: number) => void;
 }
 
 interface MapContainerProps {
@@ -241,6 +242,12 @@ const MAP_HTML = `
                 }
             };
 
+            window.centerOnLocation = function(lat, lng, zoom) {
+                if (map) {
+                    map.setView([lat, lng], zoom || 17, { animate: true });
+                }
+            };
+
             var currentUserId = null;
             window.setCurrentUser = function(userId) {
                 currentUserId = userId;
@@ -316,6 +323,12 @@ function MapContainerComponent(
     React.useImperativeHandle(ref, () => ({
         centerOnUser: () => {
             if (isReady) injectScript('window.centerOnUser && window.centerOnUser()');
+        },
+        centerOnLocation: (lat: number, lng: number, zoom?: number) => {
+            if (isReady) {
+                const z = zoom || 17;
+                injectScript(`window.centerOnLocation && window.centerOnLocation(${lat}, ${lng}, ${z})`);
+            }
         },
     }), [isReady, injectScript]);
 

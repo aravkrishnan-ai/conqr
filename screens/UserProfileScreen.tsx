@@ -6,7 +6,7 @@ import { ArrowLeft, User, Activity, MapPin, Clock, Calendar } from 'lucide-react
 import { AuthService } from '../services/AuthService';
 import { ActivityService } from '../services/ActivityService';
 import { TerritoryService } from '../services/TerritoryService';
-import { UserProfile, Activity as ActivityType } from '../lib/types';
+import { UserProfile, Activity as ActivityType, Territory } from '../lib/types';
 
 interface UserProfileScreenProps {
   navigation: any;
@@ -21,6 +21,7 @@ export default function UserProfileScreen({ navigation, route }: UserProfileScre
   const userId = route?.params?.userId;
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [activities, setActivities] = useState<ActivityType[]>([]);
+  const [territories, setTerritories] = useState<Territory[]>([]);
   const [totalArea, setTotalArea] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -32,15 +33,16 @@ export default function UserProfileScreen({ navigation, route }: UserProfileScre
     }
 
     try {
-      const [userProfile, userActivities, area] = await Promise.all([
+      const [userProfile, userActivities, userTerritories] = await Promise.all([
         AuthService.getUserProfile(userId),
-        ActivityService.getUserActivities(userId, false), // false = not current user, fetch from cloud only
-        TerritoryService.getTotalArea(userId)
+        ActivityService.getUserActivities(userId, false),
+        TerritoryService.getUserTerritories(userId)
       ]);
 
       setProfile(userProfile);
       setActivities(userActivities);
-      setTotalArea(area);
+      setTerritories(userTerritories);
+      setTotalArea(userTerritories.reduce((sum, t) => sum + (t.area || 0), 0));
     } catch (err) {
       console.error('Failed to load user profile:', err);
     } finally {
@@ -175,6 +177,26 @@ export default function UserProfileScreen({ navigation, route }: UserProfileScre
               <Text style={styles.statLabel}>Territory</Text>
             </View>
           </View>
+
+          {territories.length > 0 && (
+            <View style={styles.territoriesSection}>
+              <Text style={styles.sectionTitle}>Territories ({territories.length})</Text>
+              {territories.slice(0, 5).map((territory) => (
+                <View key={territory.id} style={styles.territoryCard}>
+                  <View style={styles.territoryIcon}>
+                    <MapPin color="#E65100" size={20} />
+                  </View>
+                  <View style={styles.territoryInfo}>
+                    <Text style={styles.territoryName}>
+                      {territory.name || 'Territory'}
+                    </Text>
+                    <Text style={styles.territoryArea}>{formatArea(territory.area)}</Text>
+                    <Text style={styles.territoryDate}>{formatDate(territory.claimedAt)}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
 
           <View style={styles.activitiesSection}>
             <Text style={styles.sectionTitle}>Recent Activities</Text>
@@ -313,6 +335,45 @@ const styles = StyleSheet.create({
     width: 1,
     height: '100%',
     backgroundColor: '#E0E0E0',
+  },
+  territoriesSection: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  territoryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  territoryIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: 'rgba(230, 81, 0, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  territoryInfo: {
+    flex: 1,
+  },
+  territoryName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1A1A1A',
+  },
+  territoryArea: {
+    fontSize: 12,
+    color: '#666666',
+    marginTop: 2,
+  },
+  territoryDate: {
+    fontSize: 11,
+    color: '#999999',
+    marginTop: 2,
   },
   activitiesSection: {
     paddingHorizontal: 20,

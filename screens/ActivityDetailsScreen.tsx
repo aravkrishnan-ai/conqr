@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { ArrowLeft, MapPin, Clock, Zap, Mountain, Map } from 'lucide-react-native';
+import { ArrowLeft, MapPin, Clock, Zap, Mountain, Map, ChevronRight } from 'lucide-react-native';
 import { Activity, Territory, GPSPoint } from '../lib/types';
 import { ActivityService } from '../services/ActivityService';
 import { TerritoryService } from '../services/TerritoryService';
@@ -248,7 +248,16 @@ export default function ActivityDetailsScreen({ navigation, route }: ActivityDet
           {territory ? (
             <View style={styles.territorySection}>
               <Text style={styles.sectionTitle}>Territory Claimed</Text>
-              <View style={styles.territoryCard}>
+              <TouchableOpacity
+                style={styles.territoryCard}
+                activeOpacity={0.7}
+                onPress={() => {
+                  navigation.navigate('Home', {
+                    focusTerritoryLat: territory.center.lat,
+                    focusTerritoryLng: territory.center.lng,
+                  });
+                }}
+              >
                 <View style={styles.territoryIcon}>
                   <Map color="#E65100" size={28} />
                 </View>
@@ -257,7 +266,8 @@ export default function ActivityDetailsScreen({ navigation, route }: ActivityDet
                   <Text style={styles.territoryArea}>{formatArea(territory.area)}</Text>
                   <Text style={styles.territoryPerimeter}>Perimeter: {formatDistance(territory.perimeter)}</Text>
                 </View>
-              </View>
+                <ChevronRight color="#E65100" size={20} />
+              </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.noTerritorySection}>

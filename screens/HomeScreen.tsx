@@ -2,39 +2,56 @@ import * as React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { useFocusEffect } from '@react-navigation/native';
 import MapContainer, { MapContainerHandle } from '../components/MapContainer';
 import BottomTabBar from '../components/BottomTabBar';
 import { Territory, GPSPoint } from '../lib/types';
 import { TerritoryService } from '../services/TerritoryService';
+import { ActivityService } from '../services/ActivityService';
 import { LocationService } from '../services/LocationService';
 import { supabase } from '../lib/supabase';
 
 interface HomeScreenProps {
   navigation: any;
+  route?: {
+    params?: {
+      focusTerritoryLat?: number;
+      focusTerritoryLng?: number;
+    };
+  };
 }
 
-export default function HomeScreen({ navigation }: HomeScreenProps) {
+export default function HomeScreen({ navigation, route }: HomeScreenProps) {
   const [location, setLocation] = React.useState<GPSPoint | null>(null);
   const [territories, setTerritories] = React.useState<Territory[]>([]);
   const [currentUserId, setCurrentUserId] = React.useState<string | undefined>(undefined);
   const mapRef = React.useRef<MapContainerHandle>(null);
 
-  React.useEffect(() => {
-    const loadTerritories = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          setCurrentUserId(session.user.id);
-          // Fetch all territories to show everyone's claimed areas
-          const allTerritories = await TerritoryService.getAllTerritories();
-          setTerritories(allTerritories);
+  // Reload territories every time the screen comes into focus (including mount)
+  // Also sync any pending activities in background to ensure data reaches the cloud
+  useFocusEffect(
+    React.useCallback(() => {
+      // Sync pending activities in background so other users can see them
+      ActivityService.syncPendingActivities().catch(err => {
+        console.error('Failed to sync pending activities:', err);
+      });
+
+      const loadTerritories = async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            setCurrentUserId(session.user.id);
+            // Fetch all territories to show everyone's claimed areas
+            const allTerritories = await TerritoryService.getAllTerritories();
+            setTerritories(allTerritories);
+          }
+        } catch (err) {
+          console.error('Failed to load territories:', err);
         }
-      } catch (err) {
-        console.error('Failed to load territories:', err);
-      }
-    };
-    loadTerritories();
-  }, []);
+      };
+      loadTerritories();
+    }, [])
+  );
 
   React.useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -65,13 +82,33 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     };
   }, []);
 
-  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'search') => {
+  // Center map on territory when navigated with focus params
+  const focusLat = route?.params?.focusTerritoryLat;
+  const focusLng = route?.params?.focusTerritoryLng;
+  const lastFocusRef = React.useRef<string>('');
+
+  React.useEffect(() => {
+    if (focusLat && focusLng) {
+      const focusKey = `${focusLat},${focusLng}`;
+      if (focusKey === lastFocusRef.current) return;
+      lastFocusRef.current = focusKey;
+      // Small delay to ensure map is ready
+      const timer = setTimeout(() => {
+        mapRef.current?.centerOnLocation(focusLat, focusLng, 17);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [focusLat, focusLng]);
+
+  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'search' | 'leaderboard') => {
     if (tab === 'record') {
       navigation.navigate('Record');
     } else if (tab === 'profile') {
       navigation.navigate('Profile');
     } else if (tab === 'search') {
       navigation.navigate('Search');
+    } else if (tab === 'leaderboard') {
+      navigation.navigate('Leaderboard');
     }
   };
 

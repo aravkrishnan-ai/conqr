@@ -188,8 +188,8 @@ export const ActivityService = {
         }
 
         // Sync to Supabase in background (non-blocking)
-        // Use setTimeout to make this truly non-blocking
-        setTimeout(async () => {
+        // Use direct async IIFE instead of setTimeout for more reliable execution
+        (async () => {
             try {
                 const sessionPromise = supabase.auth.getSession();
                 const { data: { session } } = await withTimeout(
@@ -229,7 +229,6 @@ export const ActivityService = {
 
                 if (error) {
                     console.error('Failed to sync activity to cloud:', error);
-                    // Mark as not synced in local db
                     await db.activities.update(activity.id, { isSynced: false }).catch(() => {});
                 } else {
                     console.log('Activity synced to cloud:', activity.id);
@@ -237,10 +236,9 @@ export const ActivityService = {
                 }
             } catch (err) {
                 console.error('Activity sync error:', err);
-                // Mark as not synced
                 await db.activities.update(activity.id, { isSynced: false }).catch(() => {});
             }
-        }, 0);
+        })();
 
         return activity;
     },
@@ -277,11 +275,29 @@ export const ActivityService = {
         // For other users, fetch directly from cloud without local storage
         if (!isCurrentUser) {
             try {
-                const { data, error } = await supabase
-                    .from('activities')
-                    .select('*')
-                    .eq('user_id', userId)
-                    .order('start_time', { ascending: false });
+                let data: any[] | null = null;
+                let error: any = null;
+
+                // Try RPC function first (uses SECURITY DEFINER to bypass RLS)
+                try {
+                    const rpcResult = await supabase
+                        .rpc('get_user_activities', { target_user_id: userId });
+                    data = rpcResult.data;
+                    error = rpcResult.error;
+                } catch (rpcErr) {
+                    console.log('RPC function not available, falling back to direct query');
+                }
+
+                // Fallback to direct query if RPC failed
+                if (error || !data) {
+                    const directResult = await supabase
+                        .from('activities')
+                        .select('*')
+                        .eq('user_id', userId)
+                        .order('start_time', { ascending: false });
+                    data = directResult.data;
+                    error = directResult.error;
+                }
 
                 if (error) {
                     console.error('Failed to fetch other user activities:', error);
@@ -289,7 +305,7 @@ export const ActivityService = {
                 }
 
                 if (data && data.length > 0) {
-                    return data.map((a: any) => ({
+                    const activities = data.map((a: any) => ({
                         id: a.id,
                         userId: a.user_id,
                         type: a.type || 'WALK',
@@ -302,6 +318,15 @@ export const ActivityService = {
                         territoryId: a.territory_id || undefined,
                         averageSpeed: a.average_speed || undefined
                     }));
+
+                    // Cache other users' activities locally for detail view access
+                    try {
+                        await db.activities.bulkPut(activities);
+                    } catch (err) {
+                        console.error('Failed to cache other user activities:', err);
+                    }
+
+                    return activities;
                 }
 
                 return [];
@@ -475,11 +500,44 @@ export const ActivityService = {
 
     /**
      * Get a single activity by ID
+     * Checks local db first, falls back to cloud query
      */
     async getActivity(activityId: string): Promise<Activity | null> {
         try {
+            // Check local db first
             const activity = await db.activities.get(activityId);
-            return activity || null;
+            if (activity) return activity;
+
+            // Fallback to cloud query (needed for viewing other users' activity details)
+            try {
+                const { data, error } = await supabase
+                    .from('activities')
+                    .select('*')
+                    .eq('id', activityId)
+                    .single();
+
+                if (error || !data) return null;
+
+                const cloudActivity: Activity = {
+                    id: data.id,
+                    userId: data.user_id,
+                    type: data.type || 'WALK',
+                    startTime: new Date(data.start_time).getTime(),
+                    endTime: data.end_time ? new Date(data.end_time).getTime() : undefined,
+                    distance: data.distance || 0,
+                    duration: data.duration || 0,
+                    polylines: this._parsePolylines(data.polylines),
+                    isSynced: true,
+                    territoryId: data.territory_id || undefined,
+                    averageSpeed: data.average_speed || undefined
+                };
+
+                // Cache locally for future access
+                await db.activities.put(cloudActivity).catch(() => {});
+                return cloudActivity;
+            } catch {
+                return null;
+            }
         } catch (err) {
             console.error('Failed to get activity:', err);
             return null;

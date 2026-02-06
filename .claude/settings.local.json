@@ -79,7 +79,13 @@
       "WebSearch",
       "WebFetch(domain:drive.google.com)",
       "Bash(wc:*)",
-      "WebFetch(domain:www.figma.com)"
+      "WebFetch(domain:www.figma.com)",
+      "Bash(npx supabase:*)",
+      "Bash(printenv:*)",
+      "Bash(export SUPABASE_ACCESS_TOKEN=sbp_c26a63438cdc07b26128bffa0ddbc8d18dc6f9d7:*)",
+      "Bash(npx eas build:*)",
+      "Bash(node:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_49165b14f6861db061f589d46f085b1ea43c0e24 npx supabase db push:*)"
     ]
   }
 }

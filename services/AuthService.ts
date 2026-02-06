@@ -216,23 +216,25 @@ export const AuthService = {
         };
         await db.users.put(profile);
 
-        // Try to sync to Supabase in background (don't await)
-        (async () => {
-            try {
-                await supabase
-                    .from('users')
-                    .upsert({
-                        id: userId,
-                        email: userEmail,
-                        username: updates.username,
-                        bio: updates.bio,
-                        avatar_url: updates.avatarUrl || avatarUrl
-                    });
+        // Sync to Supabase - await to ensure profile is available for territory joins and user search
+        try {
+            const { error } = await supabase
+                .from('users')
+                .upsert({
+                    id: userId,
+                    email: userEmail,
+                    username: updates.username,
+                    bio: updates.bio,
+                    avatar_url: updates.avatarUrl || avatarUrl
+                });
+            if (error) {
+                console.error('Failed to sync profile to cloud:', error);
+            } else {
                 console.log('Profile synced to cloud');
-            } catch (err: any) {
-                console.log('Cloud sync failed, will retry later:', err?.message);
             }
-        })();
+        } catch (err: any) {
+            console.error('Cloud profile sync failed:', err?.message);
+        }
 
         return profile;
     },

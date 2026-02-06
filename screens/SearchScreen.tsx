@@ -41,13 +41,15 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
     setHasSearched(false);
   };
 
-  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'search') => {
+  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'search' | 'leaderboard') => {
     if (tab === 'home') {
       navigation.navigate('Home');
     } else if (tab === 'record') {
       navigation.navigate('Record');
     } else if (tab === 'profile') {
       navigation.navigate('Profile');
+    } else if (tab === 'leaderboard') {
+      navigation.navigate('Leaderboard');
     }
   };
 

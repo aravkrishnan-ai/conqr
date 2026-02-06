@@ -14,6 +14,7 @@ import ProfileSetupScreen from './screens/ProfileSetupScreen';
 import ActivityDetailsScreen from './screens/ActivityDetailsScreen';
 import SearchScreen from './screens/SearchScreen';
 import UserProfileScreen from './screens/UserProfileScreen';
+import LeaderboardScreen from './screens/LeaderboardScreen';
 import { supabase } from './lib/supabase';
 import { AuthService, handleAuthCallbackUrl } from './services/AuthService';
 import { AuthContext } from './contexts/AuthContext';
@@ -163,6 +164,7 @@ function AppNavigator() {
             <Stack.Screen name="Record" component={RecordScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
             <Stack.Screen name="Search" component={SearchScreen} />
+            <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
             <Stack.Screen name="ActivityDetails" component={ActivityDetailsScreen} />
             <Stack.Screen name="UserProfile" component={UserProfileScreen} />
           </>

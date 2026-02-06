@@ -10,6 +10,7 @@ import { GameEngine } from '../services/GameEngine';
 import { WakeLockService } from '../services/WakeLockService';
 import { TerritoryService } from '../services/TerritoryService';
 import { ActivityService } from '../services/ActivityService';
+import { AuthService } from '../services/AuthService';
 import { GPSPoint, ActivityType, Territory, Activity } from '../lib/types';
 import { supabase } from '../lib/supabase';
 import { getDistance } from 'geolib';
@@ -257,6 +258,13 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
         if (isClosed && currentArea > 0) {
           const territory = GameEngine.processTerritory(currentPath, userId, activityId);
           if (territory) {
+            // Set ownerName from current user's profile for display on map
+            try {
+              const currentProfile = await AuthService.getCurrentProfile();
+              if (currentProfile?.username) {
+                territory.ownerName = currentProfile.username;
+              }
+            } catch { /* proceed without ownerName */ }
             savedTerritory = await TerritoryService.saveTerritory(territory);
             setSavedTerritories(prev => [savedTerritory!, ...prev]);
           }
@@ -354,13 +362,15 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
     return `${mins}.${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'search') => {
+  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'search' | 'leaderboard') => {
     if (tab === 'home') {
       navigation.navigate('Home');
     } else if (tab === 'profile') {
       navigation.navigate('Profile');
     } else if (tab === 'search') {
       navigation.navigate('Search');
+    } else if (tab === 'leaderboard') {
+      navigation.navigate('Leaderboard');
     }
   };
 

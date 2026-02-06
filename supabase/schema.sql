@@ -28,6 +28,7 @@ create table public.territories (
   owner_id uuid references public.users(id),
   claimed_at timestamptz default now(),
   area float,
+  perimeter float,
   center jsonb, -- { lat, lng }
   polygon jsonb, -- array of coords
   activity_id uuid
@@ -41,27 +42,56 @@ create policy "Territories are viewable by everyone"
 create policy "Authenticated users can create territories"
   on public.territories for insert with check ( auth.role() = 'authenticated' );
 
--- Activities Table (Private)
+create policy "Users can update own territories"
+  on public.territories for update using ( auth.uid() = owner_id );
+
+create policy "Users can delete own territories"
+  on public.territories for delete using ( auth.uid() = owner_id );
+
+-- Activities Table (Public read, owner write)
 create table public.activities (
     id uuid default gen_random_uuid() primary key,
     user_id uuid references public.users(id),
     type text,
     start_time timestamptz,
+    end_time timestamptz,
     distance float,
     duration float,
-    polylines jsonb
+    polylines jsonb,
+    is_synced boolean default false,
+    territory_id uuid,
+    average_speed float
 );
 
 alter table public.activities enable row level security;
 
-create policy "Users can see own activities"
-  on public.activities for select using ( auth.uid() = user_id );
+-- Activities are viewable by all authenticated users (needed for viewing other user profiles)
+create policy "Activities are viewable by everyone"
+  on public.activities for select using ( true );
 
 create policy "Users can insert own activities"
   on public.activities for insert with check ( auth.uid() = user_id );
 
+create policy "Users can update own activities"
+  on public.activities for update using ( auth.uid() = user_id );
+
+create policy "Users can delete own activities"
+  on public.activities for delete using ( auth.uid() = user_id );
+
+-- RPC function for fetching user activities (bypasses RLS with SECURITY DEFINER)
+create or replace function public.get_user_activities(target_user_id uuid)
+returns setof public.activities
+language sql
+security definer
+set search_path = public
+as $$
+  select * from public.activities
+  where user_id = target_user_id
+  order by start_time desc;
+$$;
+
 -- Handle new user signup automatically (Optional, but good practice)
-create or replace function public.handle_new_user() 
+create or replace function public.handle_new_user()
 returns trigger as $$
 begin
   insert into public.users (id, email, username, avatar_url)

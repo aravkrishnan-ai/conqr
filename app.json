@@ -4,7 +4,7 @@
     "slug": "conqr",
     "scheme": "conqr",
     "owner": "aravconqr",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -26,7 +26,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#F5F0E8"
       },
       "package": "com.aravkrishnan.conqr",
       "permissions": [

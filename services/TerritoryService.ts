@@ -64,6 +64,52 @@ const mapCloudTerritory = (t: any): Territory | null => {
     }
 };
 
+/**
+ * Batch-fetch usernames for territories missing ownerName.
+ * Sets a fallback display name if username can't be resolved.
+ */
+const resolveOwnerNames = async (territories: Territory[]): Promise<void> => {
+    const missing = territories.filter(t => !t.ownerName && t.ownerId);
+    if (missing.length === 0) return;
+
+    const ownerIds = [...new Set(missing.map(t => t.ownerId))];
+    try {
+        const { data: users, error } = await supabase
+            .from('users')
+            .select('id, username')
+            .in('id', ownerIds);
+
+        if (error) {
+            console.error('Error fetching owner usernames:', error);
+        }
+
+        const userMap = new Map<string, string>();
+        if (users && users.length > 0) {
+            for (const u of users) {
+                if (u.username) {
+                    userMap.set(u.id, u.username);
+                }
+            }
+        }
+
+        for (const territory of territories) {
+            if (!territory.ownerName && territory.ownerId) {
+                const username = userMap.get(territory.ownerId);
+                // Always set a display name - use username if found, otherwise a short fallback
+                territory.ownerName = username || ('User ' + territory.ownerId.substring(0, 6));
+            }
+        }
+    } catch (err) {
+        console.error('Failed to resolve owner usernames:', err);
+        // Even on complete failure, set fallback names so labels still appear
+        for (const territory of territories) {
+            if (!territory.ownerName && territory.ownerId) {
+                territory.ownerName = 'User ' + territory.ownerId.substring(0, 6);
+            }
+        }
+    }
+};
+
 export const TerritoryService = {
     async saveTerritory(territory: Territory): Promise<Territory> {
         // Validate territory before saving
@@ -119,19 +165,36 @@ export const TerritoryService = {
         try {
             const { data, error } = await supabase
                 .from('territories')
-                .select('*')
+                .select('*, users!owner_id(username)')
                 .eq('owner_id', userId)
                 .order('claimed_at', { ascending: false });
 
             if (error) {
                 console.error('Failed to fetch territories from cloud:', error);
+                // Try to resolve names for local territories before returning
+                if (userLocal.length > 0) {
+                    await resolveOwnerNames(userLocal).catch(() => {});
+                }
                 return userLocal;
             }
 
             if (data && data.length > 0) {
                 const cloudTerritories: Territory[] = data
-                    .map(mapCloudTerritory)
+                    .map((t: any) => {
+                        const territory = mapCloudTerritory(t);
+                        if (territory) {
+                            // Try multiple paths to get the username from the join
+                            const username = t.users?.username || t.user?.username;
+                            if (username) {
+                                territory.ownerName = username;
+                            }
+                        }
+                        return territory;
+                    })
                     .filter((t): t is Territory => t !== null);
+
+                // Always resolve any missing owner names as fallback
+                await resolveOwnerNames(cloudTerritories);
 
                 // Cache cloud territories locally using a single bulk write
                 try {
@@ -154,36 +217,62 @@ export const TerritoryService = {
         const localTerritories = await db.territories.toArray();
 
         try {
-            // Fetch territories with owner usernames
+            // Fetch territories with owner usernames using v2 FK hint syntax
             const { data, error } = await supabase
                 .from('territories')
-                .select(`
-                    *,
-                    users:owner_id (username)
-                `)
+                .select('*, users!owner_id(username)')
                 .order('claimed_at', { ascending: false })
                 .limit(100);
 
             if (error) {
                 console.error('Failed to fetch all territories:', error);
+                // Try to resolve names for local territories before returning
+                if (localTerritories.length > 0) {
+                    await resolveOwnerNames(localTerritories).catch(() => {});
+                }
                 return localTerritories;
             }
 
             if (data && data.length > 0) {
-                return data
+                const territories = data
                     .map((t: any) => {
                         const territory = mapCloudTerritory(t);
-                        if (territory && t.users?.username) {
-                            territory.ownerName = t.users.username;
+                        if (territory) {
+                            // Try multiple paths to get the username from the join
+                            const username = t.users?.username || t.user?.username;
+                            if (username) {
+                                territory.ownerName = username;
+                            }
                         }
                         return territory;
                     })
                     .filter((t): t is Territory => t !== null);
+
+                // Always resolve any missing owner names as fallback
+                await resolveOwnerNames(territories);
+
+                // Cache cloud territories with ownerName locally
+                try {
+                    await db.territories.bulkPut(territories);
+                } catch (err) {
+                    console.error('Failed to cache all territories locally:', err);
+                }
+
+                return territories;
+            }
+
+            // If no cloud data, try to resolve usernames for local territories too
+            if (localTerritories.length > 0) {
+                await resolveOwnerNames(localTerritories);
             }
 
             return localTerritories;
         } catch (err) {
             console.error('All territories fetch error:', err);
+            // Try to resolve usernames for local territories on error
+            if (localTerritories.length > 0) {
+                await resolveOwnerNames(localTerritories).catch(() => {});
+            }
             return localTerritories;
         }
     },
@@ -191,6 +280,52 @@ export const TerritoryService = {
     async getTotalArea(userId: string): Promise<number> {
         const territories = await this.getUserTerritories(userId);
         return territories.reduce((sum, t) => sum + (t.area || 0), 0);
+    },
+
+    /**
+     * Get leaderboard data: all territories with owner info for ranking.
+     * Fetches up to 500 territories to build comprehensive leaderboard.
+     */
+    async getLeaderboardTerritories(): Promise<Territory[]> {
+        try {
+            const { data, error } = await supabase
+                .from('territories')
+                .select('id, owner_id, area, claimed_at, users!owner_id(username)')
+                .order('claimed_at', { ascending: false })
+                .limit(500);
+
+            if (error || !data) {
+                console.error('Failed to fetch leaderboard territories:', error);
+                return [];
+            }
+
+            const territories: Territory[] = data
+                .map((t: any) => {
+                    const username = t.users?.username || t.user?.username;
+                    return {
+                        id: t.id,
+                        name: '',
+                        ownerId: t.owner_id,
+                        ownerName: username || undefined,
+                        activityId: '',
+                        claimedAt: t.claimed_at ? new Date(t.claimed_at).getTime() : Date.now(),
+                        area: typeof t.area === 'number' ? t.area : 0,
+                        perimeter: 0,
+                        center: { lat: 0, lng: 0 },
+                        polygon: [],
+                        history: []
+                    } as Territory;
+                })
+                .filter((t: Territory) => t.area > 0);
+
+            // Resolve any missing owner names
+            await resolveOwnerNames(territories);
+
+            return territories;
+        } catch (err) {
+            console.error('Leaderboard territories fetch error:', err);
+            return [];
+        }
     },
 
     async deleteTerritory(territoryId: string): Promise<boolean> {
