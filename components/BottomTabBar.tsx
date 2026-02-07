@@ -1,8 +1,8 @@
 import React from 'react';
 import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import { Home, User, Users, Trophy } from 'lucide-react-native';
+import { Home, User, UserPlus, Trophy, Newspaper } from 'lucide-react-native';
 
-type TabName = 'home' | 'record' | 'profile' | 'search' | 'leaderboard';
+type TabName = 'home' | 'record' | 'profile' | 'friends' | 'leaderboard' | 'feed';
 
 interface BottomTabBarProps {
   activeTab: TabName;
@@ -26,13 +26,13 @@ export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProp
 
       <TouchableOpacity
         style={styles.tab}
-        onPress={() => onTabPress('leaderboard')}
+        onPress={() => onTabPress('feed')}
         activeOpacity={0.7}
       >
-        <Trophy
+        <Newspaper
           size={24}
-          color={activeTab === 'leaderboard' ? '#E65100' : '#666666'}
-          strokeWidth={activeTab === 'leaderboard' ? 2.5 : 2}
+          color={activeTab === 'feed' ? '#E65100' : '#666666'}
+          strokeWidth={activeTab === 'feed' ? 2.5 : 2}
         />
       </TouchableOpacity>
 
@@ -51,13 +51,25 @@ export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProp
 
       <TouchableOpacity
         style={styles.tab}
-        onPress={() => onTabPress('search')}
+        onPress={() => onTabPress('leaderboard')}
         activeOpacity={0.7}
       >
-        <Users
+        <Trophy
           size={24}
-          color={activeTab === 'search' ? '#E65100' : '#666666'}
-          strokeWidth={activeTab === 'search' ? 2.5 : 2}
+          color={activeTab === 'leaderboard' ? '#E65100' : '#666666'}
+          strokeWidth={activeTab === 'leaderboard' ? 2.5 : 2}
+        />
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.tab}
+        onPress={() => onTabPress('friends')}
+        activeOpacity={0.7}
+      >
+        <UserPlus
+          size={24}
+          color={activeTab === 'friends' ? '#E65100' : '#666666'}
+          strokeWidth={activeTab === 'friends' ? 2.5 : 2}
         />
       </TouchableOpacity>
 

@@ -6,6 +6,7 @@ import { GPSPoint, Territory } from '../lib/types';
 export interface MapContainerHandle {
     centerOnUser: () => void;
     centerOnLocation: (lat: number, lng: number, zoom?: number) => void;
+    fitBounds: (bounds: [[number, number], [number, number]], padding?: number) => void;
 }
 
 interface MapContainerProps {
@@ -14,6 +15,7 @@ interface MapContainerProps {
     territories?: Territory[];
     currentUserId?: string;
     style?: any;
+    onReady?: () => void;
 }
 
 // Static HTML that never changes - prevents WebView reloads
@@ -248,6 +250,13 @@ const MAP_HTML = `
                 }
             };
 
+            window.fitBounds = function(southWest, northEast, padding) {
+                if (!map) return;
+                var p = padding || 40;
+                var bounds = L.latLngBounds(southWest, northEast);
+                map.fitBounds(bounds, { padding: [p, p], animate: false });
+            };
+
             var currentUserId = null;
             window.setCurrentUser = function(userId) {
                 currentUserId = userId;
@@ -296,7 +305,7 @@ const MAP_HTML = `
 `;
 
 function MapContainerComponent(
-    { location, path, territories = [], currentUserId, style }: MapContainerProps,
+    { location, path, territories = [], currentUserId, style, onReady }: MapContainerProps,
     ref: React.Ref<MapContainerHandle>
 ) {
     const webViewRef = React.useRef<WebView>(null);
@@ -328,6 +337,12 @@ function MapContainerComponent(
             if (isReady) {
                 const z = zoom || 17;
                 injectScript(`window.centerOnLocation && window.centerOnLocation(${lat}, ${lng}, ${z})`);
+            }
+        },
+        fitBounds: (bounds: [[number, number], [number, number]], padding?: number) => {
+            if (isReady) {
+                const p = padding || 40;
+                injectScript(`window.fitBounds && window.fitBounds([${bounds[0][0]}, ${bounds[0][1]}], [${bounds[1][0]}, ${bounds[1][1]}], ${p})`);
             }
         },
     }), [isReady, injectScript]);
@@ -419,8 +434,9 @@ function MapContainerComponent(
         if (event.nativeEvent.data === 'ready') {
             setIsReady(true);
             setIsLoading(false);
+            onReady?.();
         }
-    }, []);
+    }, [onReady]);
 
     return (
         <View style={[styles.container, style]}>

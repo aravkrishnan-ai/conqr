@@ -499,6 +499,47 @@ export const ActivityService = {
     },
 
     /**
+     * Flatten polyline segments into a single array of GPS points
+     */
+    flattenPolylines(polylines: GPSPoint[][]): GPSPoint[] {
+        if (!polylines || !Array.isArray(polylines)) return [];
+        return polylines.reduce((acc: GPSPoint[], segment) => {
+            if (Array.isArray(segment)) {
+                return [...acc, ...segment];
+            }
+            return acc;
+        }, []);
+    },
+
+    /**
+     * Calculate bounding box for a set of GPS points
+     * Returns null if no valid points exist
+     */
+    calculateRouteBounds(points: GPSPoint[]): { southWest: [number, number]; northEast: [number, number] } | null {
+        if (!points || !Array.isArray(points) || points.length === 0) return null;
+
+        let minLat = Infinity, maxLat = -Infinity;
+        let minLng = Infinity, maxLng = -Infinity;
+        let validCount = 0;
+
+        for (const p of points) {
+            if (!p || isNaN(p.lat) || isNaN(p.lng)) continue;
+            if (p.lat < minLat) minLat = p.lat;
+            if (p.lat > maxLat) maxLat = p.lat;
+            if (p.lng < minLng) minLng = p.lng;
+            if (p.lng > maxLng) maxLng = p.lng;
+            validCount++;
+        }
+
+        if (validCount === 0 || !isFinite(minLat)) return null;
+
+        return {
+            southWest: [minLat, minLng],
+            northEast: [maxLat, maxLng],
+        };
+    },
+
+    /**
      * Get a single activity by ID
      * Checks local db first, falls back to cloud query
      */
@@ -506,7 +547,11 @@ export const ActivityService = {
         try {
             // Check local db first
             const activity = await db.activities.get(activityId);
-            if (activity) return activity;
+            if (activity) {
+                // Ensure polylines are properly parsed (belt and suspenders)
+                activity.polylines = this._parsePolylines(activity.polylines);
+                return activity;
+            }
 
             // Fallback to cloud query (needed for viewing other users' activity details)
             try {

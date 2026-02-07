@@ -2,7 +2,7 @@ import * as React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Modal, Animated, Easing, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Footprints, Bike, PersonStanding, Trophy, MapPin, Clock, Gauge, Map, X } from 'lucide-react-native';
+import { Footprints, Bike, PersonStanding, Trophy, MapPin, Clock, Gauge, Map, X, Swords, Share2 } from 'lucide-react-native';
 import MapContainer, { MapContainerHandle } from '../components/MapContainer';
 import BottomTabBar from '../components/BottomTabBar';
 import { LocationService } from '../services/LocationService';
@@ -11,7 +11,8 @@ import { WakeLockService } from '../services/WakeLockService';
 import { TerritoryService } from '../services/TerritoryService';
 import { ActivityService } from '../services/ActivityService';
 import { AuthService } from '../services/AuthService';
-import { GPSPoint, ActivityType, Territory, Activity } from '../lib/types';
+import { GPSPoint, ActivityType, Territory, Activity, ConquerResult } from '../lib/types';
+import SharePreviewModal from '../components/SharePreviewModal';
 import { supabase } from '../lib/supabase';
 import { getDistance } from 'geolib';
 import { v4 as uuidv4 } from 'uuid';
@@ -33,6 +34,9 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
   const [elapsedTime, setElapsedTime] = React.useState(0);
   const [currentSpeed, setCurrentSpeed] = React.useState(0);
   const [isSaving, setIsSaving] = React.useState(false);
+  const [showShareModal, setShowShareModal] = React.useState(false);
+  const [completedActivity, setCompletedActivity] = React.useState<Activity | null>(null);
+  const [completedTerritory, setCompletedTerritory] = React.useState<Territory | null>(null);
   const [successModal, setSuccessModal] = React.useState<{
     visible: boolean;
     title: string;
@@ -40,6 +44,7 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
     duration: string;
     pace: string;
     territory?: string;
+    conquered?: string;
     message?: string;
   }>({ visible: false, title: '', distance: '', duration: '', pace: '' });
 
@@ -253,20 +258,51 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
         const currentArea = GameEngine.calculateArea(currentPath);
 
         let savedTerritory: Territory | null = null;
+        let conqueredArea = 0;
         const { isClosed } = GameEngine.checkLoopClosure(currentPath);
 
         if (isClosed && currentArea > 0) {
           const territory = GameEngine.processTerritory(currentPath, userId, activityId);
           if (territory) {
-            // Set ownerName from current user's profile for display on map
+            let username: string | undefined;
             try {
               const currentProfile = await AuthService.getCurrentProfile();
               if (currentProfile?.username) {
                 territory.ownerName = currentProfile.username;
+                username = currentProfile.username;
               }
             } catch { /* proceed without ownerName */ }
-            savedTerritory = await TerritoryService.saveTerritory(territory);
-            setSavedTerritories(prev => [savedTerritory!, ...prev]);
+
+            // Fetch all territories to check for overlaps
+            let allTerritories: Territory[] = [];
+            try {
+              allTerritories = await TerritoryService.getAllTerritories();
+            } catch (err) {
+              console.error('Failed to fetch territories for overlap check:', err);
+            }
+
+            // Use conquering flow
+            const conquerResult = await TerritoryService.saveTerritoryWithConquering(
+              territory, allTerritories, username
+            );
+
+            savedTerritory = conquerResult.newTerritory;
+            conqueredArea = conquerResult.totalConqueredArea;
+
+            // Update local territory state to reflect modifications
+            setSavedTerritories(prev => {
+              let updated = [...prev];
+              // Remove deleted territories
+              updated = updated.filter(t => !conquerResult.deletedTerritoryIds.includes(t.id));
+              // Update modified territories
+              for (const mod of conquerResult.modifiedTerritories) {
+                const idx = updated.findIndex(t => t.id === mod.id);
+                if (idx >= 0) updated[idx] = mod;
+              }
+              // Add new territory
+              updated.unshift(savedTerritory!);
+              return updated;
+            });
           }
         }
 
@@ -286,6 +322,10 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
 
         const savedActivity = await ActivityService.saveActivity(activity);
 
+        // Store completed data for share card (before reset clears state)
+        setCompletedActivity(activity);
+        setCompletedTerritory(savedTerritory || null);
+
         if (savedActivity) {
           const durationFormatted = ActivityService.formatDuration(duration);
           const paceFormatted = averageSpeed > 0 ? ActivityService.calculatePace(averageSpeed) : '--:--';
@@ -293,11 +333,14 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
           if (savedTerritory) {
             setSuccessModal({
               visible: true,
-              title: 'Territory Conquered!',
+              title: conqueredArea > 0 ? 'Territory Invaded!' : 'Territory Conquered!',
               distance: `${(distance / 1000).toFixed(2)} km`,
               duration: durationFormatted,
               pace: `${paceFormatted} /km`,
-              territory: `${(savedTerritory.area / 1000000).toFixed(4)} km²`
+              territory: `${(savedTerritory.area / 1000000).toFixed(4)} km²`,
+              conquered: conqueredArea > 0
+                ? `${(conqueredArea / 1000000).toFixed(4)} km²`
+                : undefined,
             });
           } else {
             setSuccessModal({
@@ -362,15 +405,17 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
     return `${mins}.${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'search' | 'leaderboard') => {
+  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'friends' | 'leaderboard' | 'feed') => {
     if (tab === 'home') {
       navigation.navigate('Home');
     } else if (tab === 'profile') {
       navigation.navigate('Profile');
-    } else if (tab === 'search') {
-      navigation.navigate('Search');
+    } else if (tab === 'friends') {
+      navigation.navigate('Friends');
     } else if (tab === 'leaderboard') {
       navigation.navigate('Leaderboard');
+    } else if (tab === 'feed') {
+      navigation.navigate('Feed');
     }
   };
 
@@ -529,21 +574,47 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
                   <Text style={styles.successStatLabel}>Territory</Text>
                 </View>
               )}
+              {successModal.conquered && (
+                <View style={styles.successStatBox}>
+                  <Swords color="#E65100" size={20} />
+                  <Text style={styles.successStatValue}>{successModal.conquered}</Text>
+                  <Text style={styles.successStatLabel}>Conquered</Text>
+                </View>
+              )}
             </View>
 
             {successModal.message && (
               <Text style={styles.successMessage}>{successModal.message}</Text>
             )}
 
-            <TouchableOpacity
-              style={styles.successDoneButton}
-              onPress={() => setSuccessModal(prev => ({ ...prev, visible: false }))}
-            >
-              <Text style={styles.successDoneText}>Done</Text>
-            </TouchableOpacity>
+            <View style={styles.successButtonRow}>
+              <TouchableOpacity
+                style={styles.successShareButton}
+                onPress={() => {
+                  setSuccessModal(prev => ({ ...prev, visible: false }));
+                  setShowShareModal(true);
+                }}
+              >
+                <Share2 color="#FFFFFF" size={18} />
+                <Text style={styles.successShareText}>Share</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.successDoneButton}
+                onPress={() => setSuccessModal(prev => ({ ...prev, visible: false }))}
+              >
+                <Text style={styles.successDoneText}>Done</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
+      <SharePreviewModal
+        visible={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        cardType="activity"
+        activity={completedActivity || undefined}
+        territory={completedTerritory || undefined}
+      />
     </View>
   );
 }
@@ -755,12 +826,32 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     fontStyle: 'italic' as const,
   },
+  successButtonRow: {
+    flexDirection: 'row' as const,
+    gap: 10,
+    width: '100%',
+  },
+  successShareButton: {
+    flexDirection: 'row' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1A1A1A',
+    paddingVertical: 14,
+    borderRadius: 12,
+    flex: 1,
+    gap: 8,
+  },
+  successShareText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   successDoneButton: {
     backgroundColor: '#E65100',
     paddingVertical: 14,
-    paddingHorizontal: 48,
+    paddingHorizontal: 24,
     borderRadius: 12,
-    width: '100%',
+    flex: 1,
     alignItems: 'center',
   },
   successDoneText: {

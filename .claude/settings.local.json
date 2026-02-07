@@ -85,7 +85,20 @@
       "Bash(export SUPABASE_ACCESS_TOKEN=sbp_c26a63438cdc07b26128bffa0ddbc8d18dc6f9d7:*)",
       "Bash(npx eas build:*)",
       "Bash(node:*)",
-      "Bash(SUPABASE_ACCESS_TOKEN=sbp_49165b14f6861db061f589d46f085b1ea43c0e24 npx supabase db push:*)"
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_49165b14f6861db061f589d46f085b1ea43c0e24 npx supabase db push:*)",
+      "Bash(npx eas:*)",
+      "Bash(cat:*)",
+      "Bash(timeout 8 psql:*)",
+      "Bash(# Check Replit secrets for any Supabase DB password curl -s \"\"http://localhost:1105/getenv\"\")",
+      "Bash(export SUPABASE_ACCESS_TOKEN=sbp_833cc09eeecb3cd2567566e08f8fce85a5559b03)",
+      "Bash(find:*)",
+      "Bash(apt list:*)",
+      "Bash(sudo apt-get:*)",
+      "Bash(nix-env:*)",
+      "Bash(keytool:*)",
+      "Bash(openssl version:*)",
+      "Bash(openssl req:*)",
+      "Bash(openssl pkcs12:*)"
     ]
   }
 }

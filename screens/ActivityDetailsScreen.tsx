@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { ArrowLeft, MapPin, Clock, Zap, Mountain, Map, ChevronRight } from 'lucide-react-native';
+import { ArrowLeft, MapPin, Clock, Zap, Mountain, Map, ChevronRight, Share2 } from 'lucide-react-native';
 import { Activity, Territory, GPSPoint } from '../lib/types';
 import { ActivityService } from '../services/ActivityService';
 import { TerritoryService } from '../services/TerritoryService';
+import MapContainer, { MapContainerHandle } from '../components/MapContainer';
+import SharePreviewModal from '../components/SharePreviewModal';
 
 interface ActivityDetailsScreenProps {
   navigation: any;
@@ -21,6 +23,32 @@ export default function ActivityDetailsScreen({ navigation, route }: ActivityDet
   const [activity, setActivity] = useState<Activity | null>(null);
   const [territory, setTerritory] = useState<Territory | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isMapReady, setIsMapReady] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const mapRef = useRef<MapContainerHandle>(null);
+
+  const flatPath = useMemo(
+    () => ActivityService.flattenPolylines(activity?.polylines || []),
+    [activity]
+  );
+
+  const routeBounds = useMemo(
+    () => ActivityService.calculateRouteBounds(flatPath),
+    [flatPath]
+  );
+
+  // Auto-fit map to route bounds when map is ready
+  useEffect(() => {
+    if (routeBounds && isMapReady && mapRef.current) {
+      const timer = setTimeout(() => {
+        mapRef.current?.fitBounds(
+          [routeBounds.southWest, routeBounds.northEast],
+          40
+        );
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [routeBounds, isMapReady]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -187,10 +215,29 @@ export default function ActivityDetailsScreen({ navigation, route }: ActivityDet
             <ArrowLeft color="#1A1A1A" size={24} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Activity Details</Text>
-          <View style={styles.headerSpacer} />
+          <TouchableOpacity
+            style={styles.shareBtn}
+            onPress={() => setShowShareModal(true)}
+          >
+            <Share2 color="#E65100" size={22} />
+          </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          {flatPath.length > 0 && (
+            <View style={styles.mapSection}>
+              <MapContainer
+                ref={mapRef}
+                location={null}
+                path={flatPath}
+                territories={territory ? [territory] : []}
+                currentUserId={activity.userId}
+                style={styles.mapView}
+                onReady={() => setIsMapReady(true)}
+              />
+            </View>
+          )}
+
           <View style={styles.dateSection}>
             <Text style={styles.activityType}>{activity.type}</Text>
             <Text style={styles.dateText}>{formatDate(activity.startTime)}</Text>
@@ -281,6 +328,13 @@ export default function ActivityDetailsScreen({ navigation, route }: ActivityDet
           )}
         </ScrollView>
       </SafeAreaView>
+      <SharePreviewModal
+        visible={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        cardType="activity"
+        activity={activity || undefined}
+        territory={territory || undefined}
+      />
     </View>
   );
 }
@@ -314,12 +368,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1A1A1A',
   },
-  headerSpacer: {
-    width: 40,
+  shareBtn: {
+    padding: 8,
   },
   content: {
     flex: 1,
     padding: 20,
+  },
+  mapSection: {
+    height: 250,
+    marginBottom: 20,
+    marginHorizontal: -20,
+    marginTop: -20,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+  mapView: {
+    flex: 1,
   },
   dateSection: {
     marginBottom: 24,

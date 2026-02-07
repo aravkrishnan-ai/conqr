@@ -99,6 +99,9 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
   const autoRefreshRef = useRef<NodeJS.Timeout | null>(null);
   const [avatarMap, setAvatarMap] = useState<Map<string, string>>(new Map());
 
+  const periodRef = useRef<TimePeriod>(period);
+  periodRef.current = period;
+
   const fetchData = useCallback(async (showRefreshing = false) => {
     if (showRefreshing) setRefreshing(true);
     try {
@@ -120,30 +123,32 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
 
       // Fetch avatars for unique users
       const uniqueUserIds = [...new Set(territories.map(t => t.ownerId))];
-      try {
-        const { data: users } = await supabase
-          .from('users')
-          .select('id, avatar_url')
-          .in('id', uniqueUserIds);
-        if (users) {
-          const newMap = new Map<string, string>();
-          for (const u of users) {
-            if (u.avatar_url) newMap.set(u.id, u.avatar_url);
+      if (uniqueUserIds.length > 0) {
+        try {
+          const { data: users } = await supabase
+            .from('users')
+            .select('id, avatar_url')
+            .in('id', uniqueUserIds);
+          if (users) {
+            const newMap = new Map<string, string>();
+            for (const u of users) {
+              if (u.avatar_url) newMap.set(u.id, u.avatar_url);
+            }
+            setAvatarMap(newMap);
           }
-          setAvatarMap(newMap);
+        } catch {
+          // Avatar fetch is best-effort
         }
-      } catch {
-        // Avatar fetch is best-effort
       }
 
-      setLeaderboard(buildLeaderboard(territoriesRef.current, period));
+      setLeaderboard(buildLeaderboard(territoriesRef.current, periodRef.current));
     } catch (err) {
       console.error('Failed to load leaderboard:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [period]);
+  }, []);
 
   // Rebuild leaderboard when period changes (using cached data)
   useEffect(() => {
@@ -175,11 +180,12 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
     fetchData(true);
   }, [fetchData]);
 
-  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'search' | 'leaderboard') => {
+  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'friends' | 'leaderboard' | 'feed') => {
     if (tab === 'home') navigation.navigate('Home');
     else if (tab === 'record') navigation.navigate('Record');
     else if (tab === 'profile') navigation.navigate('Profile');
-    else if (tab === 'search') navigation.navigate('Search');
+    else if (tab === 'friends') navigation.navigate('Friends');
+    else if (tab === 'feed') navigation.navigate('Feed');
   };
 
   const renderRankBadge = (rank: number) => {

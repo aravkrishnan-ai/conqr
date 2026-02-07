@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
+import * as Updates from 'expo-updates';
 
 import HomeScreen from './screens/HomeScreen';
 import RecordScreen from './screens/RecordScreen';
@@ -15,6 +16,8 @@ import ActivityDetailsScreen from './screens/ActivityDetailsScreen';
 import SearchScreen from './screens/SearchScreen';
 import UserProfileScreen from './screens/UserProfileScreen';
 import LeaderboardScreen from './screens/LeaderboardScreen';
+import FriendsScreen from './screens/FriendsScreen';
+import FeedScreen from './screens/FeedScreen';
 import { supabase } from './lib/supabase';
 import { AuthService, handleAuthCallbackUrl } from './services/AuthService';
 import { AuthContext } from './contexts/AuthContext';
@@ -118,12 +121,12 @@ function AppNavigator() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state changed:', event);
       if (session) {
-        setIsAuthenticated(true);
         const meta = session.user?.user_metadata;
         setSuggestedUsername(meta?.name || meta?.full_name || session.user?.email?.split('@')[0] || '');
         setUserAvatarUrl(meta?.avatar_url || null);
         const profile = await AuthService.getCurrentProfile();
         setHasProfile(!!profile?.username);
+        setIsAuthenticated(true);
       } else {
         setIsAuthenticated(false);
         setHasProfile(false);
@@ -163,6 +166,8 @@ function AppNavigator() {
             <Stack.Screen name="Home" component={HomeScreen} />
             <Stack.Screen name="Record" component={RecordScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="Friends" component={FriendsScreen} />
+            <Stack.Screen name="Feed" component={FeedScreen} />
             <Stack.Screen name="Search" component={SearchScreen} />
             <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
             <Stack.Screen name="ActivityDetails" component={ActivityDetailsScreen} />
@@ -176,6 +181,24 @@ function AppNavigator() {
 
 export default function App() {
   console.log('APP STARTING');
+
+  useEffect(() => {
+    async function checkForUpdates() {
+      try {
+        if (!Updates.isEnabled) return;
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          console.log('Update available, downloading...');
+          await Updates.fetchUpdateAsync();
+          console.log('Update downloaded, reloading...');
+          await Updates.reloadAsync();
+        }
+      } catch (err) {
+        console.log('Update check failed:', err);
+      }
+    }
+    checkForUpdates();
+  }, []);
 
   return (
     <ErrorBoundary>

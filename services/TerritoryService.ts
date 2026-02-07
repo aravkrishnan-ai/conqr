@@ -1,6 +1,7 @@
-import { Territory } from '../lib/types';
+import { Territory, TerritoryClaimEvent, TerritoryInvasion, ConquerResult } from '../lib/types';
 import { supabase } from '../lib/supabase';
 import { db } from '../lib/db';
+import { GameEngine } from './GameEngine';
 
 /**
  * Safely parse JSON data from cloud
@@ -49,7 +50,7 @@ const mapCloudTerritory = (t: any): Territory | null => {
             perimeter: typeof t.perimeter === 'number' ? t.perimeter : 0,
             center,
             polygon,
-            history: []
+            history: safeParseJson<TerritoryClaimEvent[]>(t.history, [])
         };
 
         if (!isValidTerritory(territory)) {
@@ -138,7 +139,8 @@ export const TerritoryService = {
                     area: territory.area,
                     perimeter: territory.perimeter,
                     center: { lat: territory.center.lat, lng: territory.center.lng },
-                    polygon: territory.polygon
+                    polygon: territory.polygon,
+                    history: territory.history || []
                 });
 
             if (error) {
@@ -349,6 +351,139 @@ export const TerritoryService = {
         } catch (err) {
             console.error('Failed to delete territory:', err);
             return false;
+        }
+    },
+
+    async saveTerritoryWithConquering(
+        territory: Territory,
+        allTerritories: Territory[],
+        invaderUsername?: string
+    ): Promise<ConquerResult> {
+        const conquerResult = GameEngine.resolveOverlaps(
+            territory, allTerritories, invaderUsername
+        );
+
+        // Save locally first (offline-first)
+        await db.territories.put(territory);
+
+        for (const mod of conquerResult.modifiedTerritories) {
+            await db.territories.put(mod);
+        }
+
+        for (const delId of conquerResult.deletedTerritoryIds) {
+            await db.territories.delete(delId);
+        }
+
+        // Sync to cloud
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session?.user) {
+                console.log('No session, conquering saved locally only');
+                return conquerResult;
+            }
+
+            const hasConquering = conquerResult.modifiedTerritories.length > 0 ||
+                conquerResult.deletedTerritoryIds.length > 0;
+
+            if (hasConquering) {
+                // Use atomic RPC for territory + conquering
+                const { error } = await supabase.rpc('conquer_territory', {
+                    p_new_territory_id: territory.id,
+                    p_owner_id: territory.ownerId,
+                    p_owner_username: invaderUsername || null,
+                    p_activity_id: territory.activityId,
+                    p_name: territory.name || null,
+                    p_claimed_at: new Date(territory.claimedAt).toISOString(),
+                    p_area: territory.area,
+                    p_perimeter: territory.perimeter,
+                    p_center: { lat: territory.center.lat, lng: territory.center.lng },
+                    p_polygon: territory.polygon,
+                    p_history: territory.history || [],
+                    p_modified_territories: conquerResult.modifiedTerritories.map(t => ({
+                        id: t.id,
+                        polygon: JSON.stringify(t.polygon),
+                        area: t.area,
+                        perimeter: t.perimeter,
+                        center: JSON.stringify({ lat: t.center.lat, lng: t.center.lng }),
+                        history: JSON.stringify(t.history || []),
+                    })),
+                    p_deleted_territory_ids: conquerResult.deletedTerritoryIds,
+                    p_invasions: conquerResult.invasions.map(inv => ({
+                        invaded_user_id: inv.invadedUserId,
+                        invader_user_id: inv.invaderUserId,
+                        invader_username: inv.invaderUsername || null,
+                        invaded_territory_id: inv.invadedTerritoryId,
+                        new_territory_id: inv.newTerritoryId,
+                        overlap_area: inv.overlapArea,
+                        territory_was_destroyed: inv.territoryWasDestroyed,
+                    })),
+                });
+
+                if (error) {
+                    console.error('Conquer RPC failed, falling back:', error);
+                    await this.saveTerritory(territory);
+                } else {
+                    console.log('Territory conquered and synced:', territory.id);
+                }
+            } else {
+                // No conquering needed, use normal save
+                await this.saveTerritory(territory);
+            }
+        } catch (err) {
+            console.error('Territory conquer sync error:', err);
+            // Territory is already saved locally
+        }
+
+        return conquerResult;
+    },
+
+    async getUnseenInvasions(userId: string): Promise<TerritoryInvasion[]> {
+        try {
+            const { data, error } = await supabase
+                .from('territory_invasions')
+                .select('*')
+                .eq('invaded_user_id', userId)
+                .eq('seen', false)
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                console.error('Failed to fetch invasions:', error);
+                return [];
+            }
+
+            if (!data) return [];
+
+            return data.map((inv: any) => ({
+                id: inv.id,
+                invadedUserId: inv.invaded_user_id,
+                invaderUserId: inv.invader_user_id,
+                invaderUsername: inv.invader_username || 'Someone',
+                invadedTerritoryId: inv.invaded_territory_id,
+                newTerritoryId: inv.new_territory_id,
+                overlapArea: inv.overlap_area,
+                territoryWasDestroyed: inv.territory_was_destroyed,
+                createdAt: new Date(inv.created_at).getTime(),
+                seen: inv.seen,
+            }));
+        } catch (err) {
+            console.error('Invasion fetch error:', err);
+            return [];
+        }
+    },
+
+    async markInvasionsSeen(invasionIds: string[]): Promise<void> {
+        if (invasionIds.length === 0) return;
+        try {
+            const { error } = await supabase
+                .from('territory_invasions')
+                .update({ seen: true })
+                .in('id', invasionIds);
+
+            if (error) {
+                console.error('Failed to mark invasions seen:', error);
+            }
+        } catch (err) {
+            console.error('Mark invasions seen error:', err);
         }
     }
 };

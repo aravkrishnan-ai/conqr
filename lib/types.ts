@@ -54,3 +54,69 @@ export interface TerritoryClaimEvent {
   activityId: string;
 }
 
+export interface TerritoryInvasion {
+  id: string;
+  invadedUserId: string;
+  invaderUserId: string;
+  invaderUsername?: string;
+  invadedTerritoryId: string;
+  newTerritoryId: string;
+  overlapArea: number;
+  territoryWasDestroyed: boolean;
+  createdAt: number;
+  seen: boolean;
+}
+
+export interface ConquerResult {
+  newTerritory: Territory;
+  modifiedTerritories: Territory[];
+  deletedTerritoryIds: string[];
+  invasions: TerritoryInvasion[];
+  totalConqueredArea: number;
+}
+
+export type PostType = 'text' | 'activity_share' | 'territory_share';
+
+export interface Post {
+  id: string;
+  userId: string;
+  username: string;
+  userAvatarUrl?: string;
+  content: string;
+  postType: PostType;
+  activityId?: string;
+  territoryId?: string;
+  activity?: Activity;
+  territory?: Territory;
+  likeCount: number;
+  commentCount: number;
+  isLikedByMe: boolean;
+  createdAt: number;
+}
+
+export interface PostComment {
+  id: string;
+  postId: string;
+  userId: string;
+  username: string;
+  userAvatarUrl?: string;
+  content: string;
+  createdAt: number;
+}
+
+export type FriendshipStatus = 'pending' | 'accepted' | 'rejected' | 'none';
+
+export interface Friendship {
+  id: string;
+  requesterId: string;
+  addresseeId: string;
+  status: FriendshipStatus;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface FriendWithProfile {
+  friendship: Friendship;
+  profile: UserProfile;
+}
+

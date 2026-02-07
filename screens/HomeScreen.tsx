@@ -1,11 +1,11 @@
 import * as React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect } from '@react-navigation/native';
 import MapContainer, { MapContainerHandle } from '../components/MapContainer';
 import BottomTabBar from '../components/BottomTabBar';
-import { Territory, GPSPoint } from '../lib/types';
+import { Territory, GPSPoint, TerritoryInvasion } from '../lib/types';
 import { TerritoryService } from '../services/TerritoryService';
 import { ActivityService } from '../services/ActivityService';
 import { LocationService } from '../services/LocationService';
@@ -27,6 +27,32 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
   const [currentUserId, setCurrentUserId] = React.useState<string | undefined>(undefined);
   const mapRef = React.useRef<MapContainerHandle>(null);
 
+  const showInvasionAlert = (invasions: TerritoryInvasion[]) => {
+    const messages = invasions.map(inv => {
+      const areaText = inv.overlapArea >= 1000000
+        ? `${(inv.overlapArea / 1000000).toFixed(4)} km²`
+        : `${Math.round(inv.overlapArea)} m²`;
+      if (inv.territoryWasDestroyed) {
+        return `${inv.invaderUsername || 'Someone'} completely conquered your territory! (${areaText})`;
+      }
+      return `${inv.invaderUsername || 'Someone'} invaded ${areaText} of your territory!`;
+    });
+
+    Alert.alert(
+      `Territory ${invasions.length === 1 ? 'Invasion' : 'Invasions'}!`,
+      messages.join('\n\n'),
+      [{
+        text: 'OK',
+        onPress: () => {
+          const ids = invasions.map(inv => inv.id).filter(Boolean);
+          TerritoryService.markInvasionsSeen(ids).catch(err => {
+            console.error('Failed to mark invasions seen:', err);
+          });
+        }
+      }]
+    );
+  };
+
   // Reload territories every time the screen comes into focus (including mount)
   // Also sync any pending activities in background to ensure data reaches the cloud
   useFocusEffect(
@@ -44,6 +70,12 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
             // Fetch all territories to show everyone's claimed areas
             const allTerritories = await TerritoryService.getAllTerritories();
             setTerritories(allTerritories);
+
+            // Check for invasion notifications
+            const invasions = await TerritoryService.getUnseenInvasions(session.user.id);
+            if (invasions.length > 0) {
+              showInvasionAlert(invasions);
+            }
           }
         } catch (err) {
           console.error('Failed to load territories:', err);
@@ -100,15 +132,17 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
     }
   }, [focusLat, focusLng]);
 
-  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'search' | 'leaderboard') => {
+  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'friends' | 'leaderboard' | 'feed') => {
     if (tab === 'record') {
       navigation.navigate('Record');
     } else if (tab === 'profile') {
       navigation.navigate('Profile');
-    } else if (tab === 'search') {
-      navigation.navigate('Search');
+    } else if (tab === 'friends') {
+      navigation.navigate('Friends');
     } else if (tab === 'leaderboard') {
       navigation.navigate('Leaderboard');
+    } else if (tab === 'feed') {
+      navigation.navigate('Feed');
     }
   };
 

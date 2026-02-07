@@ -41,7 +41,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
     setHasSearched(false);
   };
 
-  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'search' | 'leaderboard') => {
+  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'friends' | 'leaderboard' | 'feed') => {
     if (tab === 'home') {
       navigation.navigate('Home');
     } else if (tab === 'record') {
@@ -50,6 +50,10 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
       navigation.navigate('Profile');
     } else if (tab === 'leaderboard') {
       navigation.navigate('Leaderboard');
+    } else if (tab === 'friends') {
+      navigation.navigate('Friends');
+    } else if (tab === 'feed') {
+      navigation.navigate('Feed');
     }
   };
 
@@ -142,7 +146,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
           )}
         </View>
       </SafeAreaView>
-      <BottomTabBar activeTab="search" onTabPress={handleTabPress} />
+      <BottomTabBar activeTab="friends" onTabPress={handleTabPress} />
     </View>
   );
 }

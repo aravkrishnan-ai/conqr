@@ -27,7 +27,6 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
   } | null>(null);
 
   const [isEditing, setIsEditing] = useState(false);
-  const [editUsername, setEditUsername] = useState('');
   const [editBio, setEditBio] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -82,7 +81,6 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
   };
 
   const startEditing = () => {
-    setEditUsername(profile?.username || '');
     setEditBio(profile?.bio || '');
     setIsEditing(true);
   };
@@ -92,23 +90,12 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
   };
 
   const saveEdits = async () => {
-    const trimmed = editUsername.trim();
-    if (!trimmed) {
-      Alert.alert('Error', 'Username cannot be empty');
-      return;
-    }
-    if (trimmed.length < 3) {
-      Alert.alert('Error', 'Username must be at least 3 characters');
-      return;
-    }
-
     setSaving(true);
     try {
       await AuthService.updateProfile({
-        username: trimmed,
         bio: editBio.trim(),
       });
-      setProfile(prev => prev ? { ...prev, username: trimmed, bio: editBio.trim() } : prev);
+      setProfile(prev => prev ? { ...prev, bio: editBio.trim() } : prev);
       setIsEditing(false);
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to update profile');
@@ -117,15 +104,17 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
     }
   };
 
-  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'search' | 'leaderboard') => {
+  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'friends' | 'leaderboard' | 'feed') => {
     if (tab === 'home') {
       navigation.navigate('Home');
     } else if (tab === 'record') {
       navigation.navigate('Record');
-    } else if (tab === 'search') {
-      navigation.navigate('Search');
+    } else if (tab === 'friends') {
+      navigation.navigate('Friends');
     } else if (tab === 'leaderboard') {
       navigation.navigate('Leaderboard');
+    } else if (tab === 'feed') {
+      navigation.navigate('Feed');
     }
   };
 
@@ -188,19 +177,7 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
               </View>
 
               <View style={styles.userInfo}>
-                {isEditing ? (
-                  <TextInput
-                    style={styles.editInput}
-                    value={editUsername}
-                    onChangeText={setEditUsername}
-                    placeholder="Username"
-                    placeholderTextColor="#999999"
-                    autoCapitalize="none"
-                    maxLength={24}
-                  />
-                ) : (
-                  <Text style={styles.username}>{profile?.username || 'your_username'}</Text>
-                )}
+                <Text style={styles.username}>{profile?.username || 'your_username'}</Text>
                 <Text style={styles.runsCount}>
                   runs{'\n'}{stats?.totalActivities || 0}
                 </Text>
