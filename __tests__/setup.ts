@@ -29,6 +29,9 @@ jest.mock('../lib/supabase', () => ({
         }
       })),
       signOut: jest.fn(async () => ({})),
+      onAuthStateChange: jest.fn(() => ({
+        data: { subscription: { unsubscribe: jest.fn() } },
+      })),
     },
     from: jest.fn(() => ({
       select: jest.fn(() => ({
@@ -39,6 +42,7 @@ jest.mock('../lib/supabase', () => ({
           }))
         }))
       })),
+      insert: jest.fn(() => ({ error: null })),
       upsert: jest.fn(() => ({ error: null })),
       delete: jest.fn(() => ({
         eq: jest.fn(() => ({ error: null }))

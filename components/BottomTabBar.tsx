@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { Home, User, UserPlus, Trophy, Newspaper } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type TabName = 'home' | 'record' | 'profile' | 'friends' | 'leaderboard' | 'feed';
 
@@ -10,8 +11,9 @@ interface BottomTabBarProps {
 }
 
 export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProps) {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 10) }]}>
       <TouchableOpacity
         style={styles.tab}
         onPress={() => onTabPress('home')}
@@ -94,7 +96,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#E5E5E5',
-    paddingBottom: Platform.OS === 'ios' ? 20 : 10,
     paddingTop: 10,
     alignItems: 'center',
     justifyContent: 'space-around',

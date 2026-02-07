@@ -8,6 +8,7 @@ import { ActivityService } from '../services/ActivityService';
 import { TerritoryService } from '../services/TerritoryService';
 import { UserProfile, Activity as ActivityType, Territory } from '../lib/types';
 import SharePreviewModal from '../components/SharePreviewModal';
+import { useScreenTracking } from '../lib/useScreenTracking';
 
 interface UserProfileScreenProps {
   navigation: any;
@@ -19,6 +20,7 @@ interface UserProfileScreenProps {
 }
 
 export default function UserProfileScreen({ navigation, route }: UserProfileScreenProps) {
+  useScreenTracking('UserProfile');
   const userId = route?.params?.userId;
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [activities, setActivities] = useState<ActivityType[]>([]);

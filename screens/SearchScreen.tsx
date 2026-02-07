@@ -6,12 +6,14 @@ import { Search, User, Users, X } from 'lucide-react-native';
 import BottomTabBar from '../components/BottomTabBar';
 import { AuthService } from '../services/AuthService';
 import { UserProfile } from '../lib/types';
+import { useScreenTracking } from '../lib/useScreenTracking';
 
 interface SearchScreenProps {
   navigation: any;
 }
 
 export default function SearchScreen({ navigation }: SearchScreenProps) {
+  useScreenTracking('Search');
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(false);

@@ -16,8 +16,10 @@ import { StatusBar } from 'expo-status-bar';
 import { User, Sparkles } from 'lucide-react-native';
 import { AuthService } from '../services/AuthService';
 import { useAuth } from '../contexts/AuthContext';
+import { useScreenTracking } from '../lib/useScreenTracking';
 
 export default function ProfileSetupScreen() {
+    useScreenTracking('ProfileSetup');
     const { setHasProfile, suggestedUsername, userAvatarUrl } = useAuth();
     const [username, setUsername] = useState('');
     const [loading, setLoading] = useState(false);

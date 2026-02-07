@@ -16,12 +16,15 @@ import SharePreviewModal from '../components/SharePreviewModal';
 import { supabase } from '../lib/supabase';
 import { getDistance } from 'geolib';
 import { v4 as uuidv4 } from 'uuid';
+import { useScreenTracking } from '../lib/useScreenTracking';
+import { AnalyticsService } from '../services/AnalyticsService';
 
 interface RecordScreenProps {
   navigation: any;
 }
 
 export default function RecordScreen({ navigation }: RecordScreenProps) {
+  useScreenTracking('Record');
   const [location, setLocation] = React.useState<GPSPoint | null>(null);
   const [path, setPath] = React.useState<GPSPoint[]>([]);
   const [isTracking, setIsTracking] = React.useState(false);
@@ -289,6 +292,12 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
             savedTerritory = conquerResult.newTerritory;
             conqueredArea = conquerResult.totalConqueredArea;
 
+            AnalyticsService.trackEvent('territory_claimed', {
+              area: savedTerritory?.area,
+              conqueredArea,
+              hadInvasion: conqueredArea > 0,
+            });
+
             // Update local territory state to reflect modifications
             setSavedTerritories(prev => {
               let updated = [...prev];
@@ -321,6 +330,14 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
         };
 
         const savedActivity = await ActivityService.saveActivity(activity);
+
+        AnalyticsService.trackEvent('activity_saved');
+        AnalyticsService.trackEvent('activity_completed', {
+          activityType: activityType,
+          distance,
+          duration,
+          loopClosed: !!savedTerritory,
+        });
 
         // Store completed data for share card (before reset clears state)
         setCompletedActivity(activity);
@@ -386,6 +403,7 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
     setShowActivityPicker(false);
     isTrackingRef.current = true;
     setIsTracking(true);
+    AnalyticsService.trackEvent('activity_started', { activityType: type });
   };
 
   const formatDuration = (seconds: number): string => {

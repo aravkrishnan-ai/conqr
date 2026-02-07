@@ -11,6 +11,8 @@ import { FriendService } from '../services/FriendService';
 import { AuthService } from '../services/AuthService';
 import { supabase } from '../lib/supabase';
 import { UserProfile, FriendWithProfile, FriendshipStatus } from '../lib/types';
+import { useScreenTracking } from '../lib/useScreenTracking';
+import { AnalyticsService } from '../services/AnalyticsService';
 
 type FriendsTab = 'friends' | 'requests' | 'pending' | 'search';
 
@@ -19,6 +21,7 @@ interface FriendsScreenProps {
 }
 
 export default function FriendsScreen({ navigation }: FriendsScreenProps) {
+  useScreenTracking('Friends');
   const [activeTab, setActiveTab] = useState<FriendsTab>('friends');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [friends, setFriends] = useState<FriendWithProfile[]>([]);
@@ -73,6 +76,7 @@ export default function FriendsScreen({ navigation }: FriendsScreenProps) {
     setActionLoading(friendshipId);
     try {
       await FriendService.acceptFriendRequest(friendshipId);
+      AnalyticsService.trackEvent('friend_request_accepted');
       if (currentUserId) await loadData(currentUserId);
     } catch (err: any) {
       Alert.alert('Error', err?.message || 'Failed to accept request');
@@ -156,6 +160,7 @@ export default function FriendsScreen({ navigation }: FriendsScreenProps) {
     setActionLoading(userId);
     try {
       await FriendService.sendFriendRequest(userId);
+      AnalyticsService.trackEvent('friend_request_sent');
       setFriendshipStatuses(prev => ({
         ...prev,
         [userId]: { status: 'pending' },

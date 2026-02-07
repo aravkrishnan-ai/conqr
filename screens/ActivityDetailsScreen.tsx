@@ -6,8 +6,10 @@ import { ArrowLeft, MapPin, Clock, Zap, Mountain, Map, ChevronRight, Share2 } fr
 import { Activity, Territory, GPSPoint } from '../lib/types';
 import { ActivityService } from '../services/ActivityService';
 import { TerritoryService } from '../services/TerritoryService';
+import { supabase } from '../lib/supabase';
 import MapContainer, { MapContainerHandle } from '../components/MapContainer';
 import SharePreviewModal from '../components/SharePreviewModal';
+import { useScreenTracking } from '../lib/useScreenTracking';
 
 interface ActivityDetailsScreenProps {
   navigation: any;
@@ -19,12 +21,14 @@ interface ActivityDetailsScreenProps {
 }
 
 export default function ActivityDetailsScreen({ navigation, route }: ActivityDetailsScreenProps) {
+  useScreenTracking('ActivityDetails');
   const activityId = route?.params?.activityId;
   const [activity, setActivity] = useState<Activity | null>(null);
   const [territory, setTerritory] = useState<Territory | null>(null);
   const [loading, setLoading] = useState(true);
   const [isMapReady, setIsMapReady] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const mapRef = useRef<MapContainerHandle>(null);
 
   const flatPath = useMemo(
@@ -49,6 +53,14 @@ export default function ActivityDetailsScreen({ navigation, route }: ActivityDet
       return () => clearTimeout(timer);
     }
   }, [routeBounds, isMapReady]);
+
+  useEffect(() => {
+    const initUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setCurrentUserId(session?.user?.id || null);
+    };
+    initUser();
+  }, []);
 
   useEffect(() => {
     const loadData = async () => {
@@ -215,12 +227,16 @@ export default function ActivityDetailsScreen({ navigation, route }: ActivityDet
             <ArrowLeft color="#1A1A1A" size={24} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Activity Details</Text>
-          <TouchableOpacity
-            style={styles.shareBtn}
-            onPress={() => setShowShareModal(true)}
-          >
-            <Share2 color="#E65100" size={22} />
-          </TouchableOpacity>
+          {activity && currentUserId === activity.userId ? (
+            <TouchableOpacity
+              style={styles.shareBtn}
+              onPress={() => setShowShareModal(true)}
+            >
+              <Share2 color="#E65100" size={22} />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.shareBtn} />
+          )}
         </View>
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>

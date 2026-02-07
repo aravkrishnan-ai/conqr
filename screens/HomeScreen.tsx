@@ -10,6 +10,7 @@ import { TerritoryService } from '../services/TerritoryService';
 import { ActivityService } from '../services/ActivityService';
 import { LocationService } from '../services/LocationService';
 import { supabase } from '../lib/supabase';
+import { useScreenTracking } from '../lib/useScreenTracking';
 
 interface HomeScreenProps {
   navigation: any;
@@ -22,6 +23,7 @@ interface HomeScreenProps {
 }
 
 export default function HomeScreen({ navigation, route }: HomeScreenProps) {
+  useScreenTracking('Home');
   const [location, setLocation] = React.useState<GPSPoint | null>(null);
   const [territories, setTerritories] = React.useState<Territory[]>([]);
   const [currentUserId, setCurrentUserId] = React.useState<string | undefined>(undefined);

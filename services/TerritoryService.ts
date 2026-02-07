@@ -2,6 +2,7 @@ import { Territory, TerritoryClaimEvent, TerritoryInvasion, ConquerResult } from
 import { supabase } from '../lib/supabase';
 import { db } from '../lib/db';
 import { GameEngine } from './GameEngine';
+import { AnalyticsService } from './AnalyticsService';
 
 /**
  * Safely parse JSON data from cloud
@@ -362,6 +363,19 @@ export const TerritoryService = {
         const conquerResult = GameEngine.resolveOverlaps(
             territory, allTerritories, invaderUsername
         );
+
+        AnalyticsService.trackEvent('territory_claimed', {
+            area: territory.area,
+            perimeter: territory.perimeter,
+            invasionCount: conquerResult.invasions.length,
+        });
+
+        for (const inv of conquerResult.invasions) {
+            AnalyticsService.trackEvent('territory_invaded', {
+                overlapArea: inv.overlapArea,
+                territoryWasDestroyed: inv.territoryWasDestroyed,
+            });
+        }
 
         // Save locally first (offline-first)
         await db.territories.put(territory);

@@ -8,6 +8,7 @@ import BottomTabBar from '../components/BottomTabBar';
 import { TerritoryService } from '../services/TerritoryService';
 import { AuthService } from '../services/AuthService';
 import { supabase } from '../lib/supabase';
+import { useScreenTracking } from '../lib/useScreenTracking';
 
 interface LeaderboardScreenProps {
   navigation: any;
@@ -90,6 +91,7 @@ const PERIOD_LABELS: Record<TimePeriod, string> = {
 };
 
 export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps) {
+  useScreenTracking('Leaderboard');
   const [period, setPeriod] = useState<TimePeriod>('all');
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);

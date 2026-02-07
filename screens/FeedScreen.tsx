@@ -17,12 +17,15 @@ import { ActivityService } from '../services/ActivityService';
 import { TerritoryService } from '../services/TerritoryService';
 import { supabase } from '../lib/supabase';
 import { Post, PostComment, PostType, Activity as ActivityType, Territory } from '../lib/types';
+import { useScreenTracking } from '../lib/useScreenTracking';
+import { AnalyticsService } from '../services/AnalyticsService';
 
 interface FeedScreenProps {
   navigation: any;
 }
 
 export default function FeedScreen({ navigation }: FeedScreenProps) {
+  useScreenTracking('Feed');
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -110,6 +113,7 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
         selectedActivityId,
         selectedTerritoryId
       );
+      AnalyticsService.trackEvent('post_created', { postType: newPostType });
       setNewPostContent('');
       setNewPostType('text');
       setSelectedActivityId(undefined);
@@ -130,6 +134,7 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
         await FeedService.unlikePost(postId);
       } else {
         await FeedService.likePost(postId);
+        AnalyticsService.trackEvent('post_liked', { postId });
       }
       setPosts(prev => prev.map(p =>
         p.id === postId
@@ -172,6 +177,7 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
     setSendingComment(true);
     try {
       const comment = await FeedService.addComment(postId, newComment.trim());
+      AnalyticsService.trackEvent('comment_added', { postId });
       setComments(prev => [...prev, comment]);
       setNewComment('');
       setPosts(prev => prev.map(p =>
@@ -355,12 +361,14 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
             )}
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => handleSharePost(item)}
-          >
-            <Share2 color="#999999" size={20} />
-          </TouchableOpacity>
+          {isOwner && (
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => handleSharePost(item)}
+            >
+              <Share2 color="#999999" size={20} />
+            </TouchableOpacity>
+          )}
         </View>
 
         {expandedComments === item.id && (

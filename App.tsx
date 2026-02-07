@@ -20,6 +20,7 @@ import FriendsScreen from './screens/FriendsScreen';
 import FeedScreen from './screens/FeedScreen';
 import { supabase } from './lib/supabase';
 import { AuthService, handleAuthCallbackUrl } from './services/AuthService';
+import { AnalyticsService } from './services/AnalyticsService';
 import { AuthContext } from './contexts/AuthContext';
 
 const Stack = createNativeStackNavigator();
@@ -40,6 +41,7 @@ class ErrorBoundary extends React.Component<
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('App crashed:', error, errorInfo);
     this.setState({ errorInfo: errorInfo.componentStack || '' });
+    AnalyticsService.trackCrash(error, errorInfo.componentStack || undefined);
   }
 
   render() {
@@ -181,6 +183,11 @@ function AppNavigator() {
 
 export default function App() {
   console.log('APP STARTING');
+
+  useEffect(() => {
+    AnalyticsService.startSession();
+    return () => { AnalyticsService.endSession(); };
+  }, []);
 
   useEffect(() => {
     async function checkForUpdates() {

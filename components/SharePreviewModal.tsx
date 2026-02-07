@@ -9,7 +9,7 @@ import { Activity, Territory } from '../lib/types';
 import { ImageShareService } from '../services/ImageShareService';
 import ShareCardActivity from './ShareCardActivity';
 import ShareCardTerritory from './ShareCardTerritory';
-import { SHARE_CARD_WIDTH, SHARE_CARD_HEIGHT, formatDistance, formatDuration, formatPace, formatArea } from '../utils/shareCardUtils';
+import { SHARE_CARD_WIDTH, SHARE_CARD_HEIGHT, DOWNLOAD_URL, formatDistance, formatDuration, formatPace, formatArea } from '../utils/shareCardUtils';
 
 // Try to import ViewShot - may not be available if native module isn't in the build
 let ViewShot: any = null;
@@ -59,7 +59,7 @@ export default function SharePreviewModal({
             lines.push(`Area: ${formatArea(territory.area)}`);
         }
         lines.push('');
-        lines.push('Download Conqr Beta: expo.dev/accounts/aravconqr/projects/conqr');
+        lines.push(`Download Conqr Beta: ${DOWNLOAD_URL}`);
 
         await Share.share({ message: lines.join('\n'), title: 'Conqr' });
     };
@@ -69,15 +69,22 @@ export default function SharePreviewModal({
         try {
             // Try image capture if ViewShot is available
             if (ViewShot && viewShotRef.current) {
-                const uri = await viewShotRef.current.capture({
-                    format: 'png',
-                    quality: 1,
-                    result: 'tmpfile',
-                });
+                try {
+                    const uri = await viewShotRef.current.capture({
+                        format: 'png',
+                        quality: 0.9,
+                        result: 'tmpfile',
+                        width: 540,
+                        height: 960,
+                    });
 
-                if (uri) {
-                    await ImageShareService.shareImage(uri);
-                    return;
+                    if (uri) {
+                        await ImageShareService.shareImage(uri);
+                        return;
+                    }
+                } catch (captureErr) {
+                    console.error('[Share] Image capture failed:', captureErr);
+                    // Fall through to text fallback
                 }
             }
 
@@ -178,7 +185,7 @@ export default function SharePreviewModal({
                             ) : (
                                 <>
                                     <Share2 color="#FFFFFF" size={20} />
-                                    <Text style={styles.shareBtnText}>Share to Story</Text>
+                                    <Text style={styles.shareBtnText}>Share</Text>
                                 </>
                             )}
                         </TouchableOpacity>

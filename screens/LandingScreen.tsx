@@ -3,10 +3,12 @@ import { View, Text, StyleSheet, Dimensions, Animated, Easing, Image } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GoogleSignInButton } from '../components/GoogleSignInButton';
 import { StatusBar } from 'expo-status-bar';
+import { useScreenTracking } from '../lib/useScreenTracking';
 
 const { width, height } = Dimensions.get('window');
 
 export default function LandingScreen() {
+    useScreenTracking('Landing');
     const fadeAnim = React.useRef(new Animated.Value(0)).current;
     const scaleAnim = React.useRef(new Animated.Value(0.9)).current;
 

@@ -10,7 +10,7 @@ export const ROUTE_GLOW_COLOR = 'rgba(230, 81, 0, 0.4)';
 export const START_COLOR = '#00D26A';
 export const END_COLOR = '#E65100';
 export const DOWNLOAD_TEXT = 'Download Conqr Beta';
-export const DOWNLOAD_URL = 'expo.dev/accounts/aravconqr/projects/conqr';
+export const DOWNLOAD_URL = 'https://expo.dev/artifacts/eas/rhkn636AALABimuEmqTL4Z.apk';
 
 // Format functions
 export const formatDistance = (meters: number): string => {
