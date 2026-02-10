@@ -1,14 +1,31 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl, Image, Modal, Dimensions, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Trophy, User, Crown, Medal } from 'lucide-react-native';
+import { Trophy, User, Crown, Medal, Share2, X } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import BottomTabBar from '../components/BottomTabBar';
+import ShareCardLeaderboard from '../components/ShareCardLeaderboard';
+import { ImageShareService } from '../services/ImageShareService';
 import { TerritoryService } from '../services/TerritoryService';
 import { AuthService } from '../services/AuthService';
 import { supabase } from '../lib/supabase';
 import { useScreenTracking } from '../lib/useScreenTracking';
+import { SHARE_CARD_WIDTH, SHARE_CARD_HEIGHT, DOWNLOAD_URL } from '../utils/shareCardUtils';
+
+// Try to import ViewShot - may not be available if native module isn't in the build
+let ViewShot: any = null;
+try {
+    ViewShot = require('react-native-view-shot').default;
+} catch {
+    // Native module not available in this build
+}
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const SHARE_PREVIEW_PADDING = 32;
+const SHARE_PREVIEW_WIDTH = SCREEN_WIDTH - SHARE_PREVIEW_PADDING * 2;
+const SHARE_SCALE = SHARE_PREVIEW_WIDTH / SHARE_CARD_WIDTH;
+const SHARE_PREVIEW_HEIGHT = SHARE_CARD_HEIGHT * SHARE_SCALE;
 
 interface LeaderboardScreenProps {
   navigation: any;
@@ -100,6 +117,9 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
   const territoriesRef = useRef<{ ownerId: string; ownerName?: string; area: number; claimedAt: number }[]>([]);
   const autoRefreshRef = useRef<NodeJS.Timeout | null>(null);
   const [avatarMap, setAvatarMap] = useState<Map<string, string>>(new Map());
+  const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const viewShotRef = useRef<any>(null);
 
   const periodRef = useRef<TimePeriod>(period);
   periodRef.current = period;
@@ -197,6 +217,58 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
     return <Text style={styles.rankNumber}>{rank}</Text>;
   };
 
+  const handleShareTextFallback = async () => {
+    const lines: string[] = ['Conqr Leaderboard - ' + PERIOD_LABELS[period]];
+    leaderboard.slice(0, 4).forEach((entry, i) => {
+      const rank = i + 1;
+      const prefix = rank === 1 ? '\uD83D\uDC51' : rank === 2 ? '\uD83E\uDD48' : rank === 3 ? '\uD83E\uDD49' : `${rank}.`;
+      lines.push(`${prefix} ${entry.username} - ${formatArea(entry.totalArea)}`);
+    });
+    if (currentUserId) {
+      const idx = leaderboard.findIndex(e => e.userId === currentUserId);
+      if (idx >= 4) {
+        lines.push('...');
+        lines.push(`${idx + 1}. ${leaderboard[idx].username} (Me) - ${formatArea(leaderboard[idx].totalArea)}`);
+      }
+    }
+    lines.push('', `Download Conqr Beta: ${DOWNLOAD_URL}`);
+    await Share.share({ message: lines.join('\n'), title: 'Conqr Leaderboard' });
+  };
+
+  const handleShare = async () => {
+    setSharing(true);
+    try {
+      if (ViewShot && viewShotRef.current) {
+        try {
+          const uri = await viewShotRef.current.capture({
+            format: 'png',
+            quality: 0.9,
+            result: 'tmpfile',
+            width: 540,
+            height: 960,
+          });
+          if (uri) {
+            await ImageShareService.shareImage(uri);
+            return;
+          }
+        } catch (captureErr) {
+          console.error('[Share] Leaderboard image capture failed:', captureErr);
+        }
+      }
+      await handleShareTextFallback();
+    } catch (err: any) {
+      if (err?.message !== 'User did not share') {
+        try {
+          await handleShareTextFallback();
+        } catch {
+          // User cancelled
+        }
+      }
+    } finally {
+      setSharing(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
@@ -210,8 +282,18 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
       <StatusBar style="dark" />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.header}>
-          <Trophy color="#E65100" size={24} />
-          <Text style={styles.headerTitle}>Leaderboard</Text>
+          <View style={styles.headerLeft} />
+          <View style={styles.headerCenter}>
+            <Trophy color="#E65100" size={24} />
+            <Text style={styles.headerTitle}>Leaderboard</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.shareHeaderBtn}
+            onPress={() => setShareModalVisible(true)}
+            disabled={leaderboard.length === 0}
+          >
+            <Share2 color={leaderboard.length === 0 ? '#CCCCCC' : '#1A1A1A'} size={22} />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.periodTabs}>
@@ -305,6 +387,87 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
         </ScrollView>
       </SafeAreaView>
       <BottomTabBar activeTab="leaderboard" onTabPress={handleTabPress} />
+
+      {/* Share Modal */}
+      <Modal
+        visible={shareModalVisible}
+        animationType="slide"
+        presentationStyle="overFullScreen"
+        transparent
+        onRequestClose={() => setShareModalVisible(false)}
+      >
+        <View style={styles.shareBackdrop}>
+          <SafeAreaView style={styles.shareContainer} edges={['top', 'bottom']}>
+            <View style={styles.shareHeader}>
+              <TouchableOpacity style={styles.shareCloseBtn} onPress={() => setShareModalVisible(false)}>
+                <X color="#FFFFFF" size={24} />
+              </TouchableOpacity>
+              <Text style={styles.shareHeaderTitle}>Share Leaderboard</Text>
+              <View style={styles.shareClosePlaceholder} />
+            </View>
+
+            <View style={styles.sharePreviewContainer}>
+              <View style={styles.sharePreviewWrapper}>
+                <View style={{
+                  width: SHARE_PREVIEW_WIDTH,
+                  height: SHARE_PREVIEW_HEIGHT,
+                  overflow: 'hidden',
+                  borderRadius: 16,
+                }}>
+                  {ViewShot ? (
+                    <ViewShot
+                      ref={viewShotRef}
+                      options={{ format: 'png', quality: 1 }}
+                      style={{
+                        width: SHARE_CARD_WIDTH,
+                        height: SHARE_CARD_HEIGHT,
+                        transform: [{ scale: SHARE_SCALE }],
+                        transformOrigin: 'top left',
+                      }}
+                    >
+                      <ShareCardLeaderboard
+                        leaderboard={leaderboard}
+                        currentUserId={currentUserId}
+                        periodLabel={PERIOD_LABELS[period]}
+                      />
+                    </ViewShot>
+                  ) : (
+                    <View style={{
+                      width: SHARE_CARD_WIDTH,
+                      height: SHARE_CARD_HEIGHT,
+                      transform: [{ scale: SHARE_SCALE }],
+                      transformOrigin: 'top left',
+                    }}>
+                      <ShareCardLeaderboard
+                        leaderboard={leaderboard}
+                        currentUserId={currentUserId}
+                        periodLabel={PERIOD_LABELS[period]}
+                      />
+                    </View>
+                  )}
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.shareActions}>
+              <TouchableOpacity
+                style={[styles.shareBtn, sharing && styles.shareBtnDisabled]}
+                onPress={handleShare}
+                disabled={sharing}
+              >
+                {sharing ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Share2 color="#FFFFFF" size={20} />
+                    <Text style={styles.shareBtnText}>Share</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -324,16 +487,30 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     paddingVertical: 14,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
+  },
+  headerLeft: {
+    width: 40,
+  },
+  headerCenter: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: '#1A1A1A',
+  },
+  shareHeaderBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   periodTabs: {
     flexDirection: 'row',
@@ -452,5 +629,71 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 20,
+  },
+  // Share modal styles
+  shareBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+  },
+  shareContainer: {
+    flex: 1,
+  },
+  shareHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  shareCloseBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareClosePlaceholder: {
+    width: 40,
+  },
+  shareHeaderTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  sharePreviewContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: SHARE_PREVIEW_PADDING,
+  },
+  sharePreviewWrapper: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#E65100',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  shareActions: {
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    gap: 12,
+  },
+  shareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E65100',
+    paddingVertical: 16,
+    borderRadius: 14,
+    gap: 10,
+  },
+  shareBtnDisabled: {
+    backgroundColor: '#666666',
+  },
+  shareBtnText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '600',
   },
 });
