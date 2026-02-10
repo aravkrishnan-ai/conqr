@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, TextInput, Alert, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { User, Flame, Pencil, Check, X, ChevronRight, MapPin, Clock, Footprints, Bike, PersonStanding, LogOut, Map, TrendingUp } from 'lucide-react-native';
+import { User, Flame, Pencil, Check, X, ChevronRight, MapPin, Clock, Footprints, Bike, PersonStanding, LogOut, Map, TrendingUp, Trash2, Shield } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import BottomTabBar from '../components/BottomTabBar';
 import { supabase } from '../lib/supabase';
@@ -86,6 +86,68 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'This will permanently delete your account and all associated data (activities, territories, posts). This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Are you sure?',
+              'Type DELETE to confirm account deletion.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Confirm Delete',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      const { data: { session } } = await supabase.auth.getSession();
+                      if (!session?.user) return;
+                      const userId = session.user.id;
+
+                      // Delete user data from all tables
+                      await Promise.allSettled([
+                        supabase.from('analytics_events').delete().eq('user_id', userId),
+                        supabase.from('territory_invasions').delete().or(`invaded_user_id.eq.${userId},invader_user_id.eq.${userId}`),
+                        supabase.from('post_comments').delete().eq('user_id', userId),
+                        supabase.from('post_likes').delete().eq('user_id', userId),
+                        supabase.from('posts').delete().eq('user_id', userId),
+                        supabase.from('friendships').delete().or(`requester_id.eq.${userId},addressee_id.eq.${userId}`),
+                        supabase.from('territories').delete().eq('owner_id', userId),
+                        supabase.from('activities').delete().eq('user_id', userId),
+                      ]);
+
+                      // Delete user profile last
+                      await supabase.from('users').delete().eq('id', userId);
+
+                      // Sign out and clear local data
+                      await supabase.auth.signOut();
+                      Alert.alert('Account Deleted', 'Your account and all data have been permanently deleted.');
+                    } catch (err) {
+                      console.error('Account deletion error:', err);
+                      Alert.alert('Error', 'Failed to delete account. Please try again or contact support at conqrapp@gmail.com');
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  };
+
+  const handlePrivacyPolicy = () => {
+    Linking.openURL('https://aravkrishnan-ai.github.io/conqr/privacy-policy.html').catch(() => {
+      Alert.alert('Error', 'Could not open privacy policy');
+    });
   };
 
   const startEditing = () => {
@@ -338,10 +400,25 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
             </View>
           )}
 
+          {/* Settings section */}
+          <View style={styles.settingsSection}>
+            <TouchableOpacity style={styles.settingsRow} onPress={handlePrivacyPolicy}>
+              <Shield color="#666666" size={18} />
+              <Text style={styles.settingsText}>Privacy Policy</Text>
+              <ChevronRight color="#CCCCCC" size={16} />
+            </TouchableOpacity>
+          </View>
+
           {/* Sign out */}
           <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
             <LogOut color="#FF3B30" size={18} />
             <Text style={styles.signOutText}>Sign Out</Text>
+          </TouchableOpacity>
+
+          {/* Delete account */}
+          <TouchableOpacity style={styles.deleteAccountButton} onPress={handleDeleteAccount}>
+            <Trash2 color="#FF3B30" size={16} />
+            <Text style={styles.deleteAccountText}>Delete Account</Text>
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
@@ -655,5 +732,43 @@ const styles = StyleSheet.create({
     color: '#FF3B30',
     fontSize: 15,
     fontWeight: '600',
+  },
+
+  // Settings section
+  settingsSection: {
+    marginHorizontal: 20,
+    marginTop: 32,
+    backgroundColor: '#FAFAFA',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  settingsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  settingsText: {
+    flex: 1,
+    fontSize: 15,
+    color: '#1A1A1A',
+  },
+
+  // Delete account
+  deleteAccountButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    marginHorizontal: 20,
+    marginBottom: 40,
+    gap: 6,
+  },
+  deleteAccountText: {
+    color: '#FF3B30',
+    fontSize: 13,
+    fontWeight: '500',
+    opacity: 0.7,
   },
 });

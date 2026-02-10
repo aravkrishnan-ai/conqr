@@ -47,10 +47,7 @@ const extractParamsFromUrl = (url: string) => {
  * Used by both the openAuthSessionAsync return and the Linking URL listener.
  */
 export const handleAuthCallbackUrl = async (url: string): Promise<boolean> => {
-    console.log('Handling auth callback URL:', url);
     const { params, errorCode, errorDescription } = extractParamsFromUrl(url);
-
-    console.log('Parsed params:', Object.keys(params));
 
     if (errorCode) {
         console.error('OAuth error:', errorCode, errorDescription);
@@ -59,7 +56,6 @@ export const handleAuthCallbackUrl = async (url: string): Promise<boolean> => {
     }
 
     const { access_token, refresh_token } = params;
-    console.log('Got tokens:', { hasAccess: !!access_token, hasRefresh: !!refresh_token });
 
     if (access_token && refresh_token) {
         const { error: sessionError } = await supabase.auth.setSession({
@@ -119,7 +115,7 @@ export const AuthService = {
             path: 'auth/callback',
         });
 
-        console.log('OAuth redirect URL:', redirectUrl);
+        // redirectUrl is safe to log (no secrets) but omitted for production cleanliness
 
         const { data, error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
@@ -141,7 +137,7 @@ export const AuthService = {
             throw new Error('No OAuth URL returned');
         }
 
-        console.log('Opening auth URL:', data.url);
+        // Opening OAuth browser session
 
         // Set up a Linking listener BEFORE opening the browser.
         // On Android in Expo Go, openAuthSessionAsync may not catch the
@@ -150,7 +146,6 @@ export const AuthService = {
         let handled = false;
         const linkingPromise = new Promise<string | null>((resolve) => {
             const sub = Linking.addEventListener('url', (event) => {
-                console.log('Linking event received:', event.url);
                 if (event.url.includes('access_token') || event.url.includes('error')) {
                     sub.remove();
                     resolve(event.url);
