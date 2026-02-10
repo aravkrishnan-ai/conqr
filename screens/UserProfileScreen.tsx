@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { ArrowLeft, User, Activity, MapPin, Clock, Calendar } from 'lucide-react-native';
+import { ArrowLeft, User, Activity, MapPin, Clock, Calendar, Crown, Medal } from 'lucide-react-native';
 import { AuthService } from '../services/AuthService';
 import { ActivityService } from '../services/ActivityService';
 import { TerritoryService } from '../services/TerritoryService';
@@ -27,6 +27,7 @@ export default function UserProfileScreen({ navigation, route }: UserProfileScre
   const [totalArea, setTotalArea] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [allTimeRank, setAllTimeRank] = useState<number | null>(null);
 
   const loadData = async () => {
     if (!userId) {
@@ -60,6 +61,22 @@ export default function UserProfileScreen({ navigation, route }: UserProfileScre
         setTotalArea(userTerritories.reduce((sum, t) => sum + (t.area || 0), 0));
       } else {
         console.error('Failed to load territories:', territoriesResult.reason);
+      }
+
+      // Compute all-time leaderboard rank for this user
+      try {
+        const allTerritories = await TerritoryService.getLeaderboardTerritories();
+        const userAreaMap = new Map<string, number>();
+        for (const t of allTerritories) {
+          userAreaMap.set(t.ownerId, (userAreaMap.get(t.ownerId) || 0) + (t.area || 0));
+        }
+        const sorted = Array.from(userAreaMap.entries()).sort((a, b) => b[1] - a[1]);
+        const rankIndex = sorted.findIndex(([uid]) => uid === userId);
+        if (rankIndex !== -1) {
+          setAllTimeRank(rankIndex + 1);
+        }
+      } catch {
+        // Rank fetch is best-effort
       }
     } catch (err) {
       console.error('Failed to load user profile:', err);
@@ -170,7 +187,12 @@ export default function UserProfileScreen({ navigation, route }: UserProfileScre
                 </View>
               )}
             </View>
-            <Text style={styles.username}>{profile.username}</Text>
+            <View style={styles.usernameRow}>
+              <Text style={styles.username}>{profile.username}</Text>
+              {allTimeRank === 1 && <Crown color="#FFD700" size={24} fill="#FFD700" />}
+              {allTimeRank === 2 && <Medal color="#C0C0C0" size={22} />}
+              {allTimeRank === 3 && <Medal color="#CD7F32" size={22} />}
+            </View>
             {profile.bio ? (
               <Text style={styles.bio}>{profile.bio}</Text>
             ) : null}
@@ -323,11 +345,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  usernameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
   username: {
     fontSize: 24,
     fontWeight: '700',
     color: '#1A1A1A',
-    marginBottom: 8,
   },
   bio: {
     fontSize: 14,
