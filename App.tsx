@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -79,6 +79,7 @@ function AppNavigator() {
   const [hasProfile, setHasProfile] = useState(false);
   const [suggestedUsername, setSuggestedUsername] = useState('');
   const [userAvatarUrl, setUserAvatarUrl] = useState<string | null>(null);
+  const initDoneRef = useRef(false);
 
   const refreshAuthState = async () => {
     try {
@@ -88,7 +89,12 @@ function AppNavigator() {
         const meta = session.user?.user_metadata;
         setSuggestedUsername(meta?.name || meta?.full_name || session.user?.email?.split('@')[0] || '');
         setUserAvatarUrl(meta?.avatar_url || null);
-        const profile = await AuthService.getCurrentProfile();
+        let profile = await AuthService.getCurrentProfile();
+        // Retry once — transient network failures at cold start are common
+        if (!profile?.username) {
+          await new Promise(r => setTimeout(r, 1000));
+          profile = await AuthService.getCurrentProfile();
+        }
         setHasProfile(!!profile?.username);
       } else {
         setIsAuthenticated(false);
@@ -116,18 +122,19 @@ function AppNavigator() {
       } catch (err) {
         console.error('App init error:', err);
       } finally {
+        initDoneRef.current = true;
         setIsLoading(false);
       }
     };
 
     // Safety timeout — if init hangs (e.g. slow AsyncStorage on cold start),
-    // stop the loading spinner after 5s so the app is still usable
+    // stop the loading spinner after 10s so the app is still usable
     const timeout = setTimeout(() => {
       setIsLoading((current) => {
         if (current) console.warn('App init timed out, proceeding anyway');
         return false;
       });
-    }, 5000);
+    }, 10000);
 
     init().then(() => clearTimeout(timeout));
 
@@ -142,18 +149,32 @@ function AppNavigator() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // During init, refreshAuthState() handles the initial state — ignore events
+      // to prevent races between the handler and init running concurrently
+      if (!initDoneRef.current) return;
+
+      // Only fully reset state on explicit sign-out
+      if (event === 'SIGNED_OUT') {
+        setIsAuthenticated(false);
+        setHasProfile(false);
+        setSuggestedUsername('');
+        setUserAvatarUrl(null);
+        return;
+      }
+
       if (session) {
         setIsAuthenticated(true);
         const meta = session.user?.user_metadata;
         setSuggestedUsername(meta?.name || meta?.full_name || session.user?.email?.split('@')[0] || '');
         setUserAvatarUrl(meta?.avatar_url || null);
-        const profile = await AuthService.getCurrentProfile();
-        setHasProfile(!!profile?.username);
-      } else {
-        setIsAuthenticated(false);
-        setHasProfile(false);
-        setSuggestedUsername('');
-        setUserAvatarUrl(null);
+
+        // Only re-check profile on actual sign-in, not token refreshes.
+        // TOKEN_REFRESHED fires periodically — if the profile query fails
+        // transiently during a refresh, we'd incorrectly show ProfileSetup.
+        if (event === 'SIGNED_IN') {
+          const profile = await AuthService.getCurrentProfile();
+          setHasProfile(!!profile?.username);
+        }
       }
     });
 
