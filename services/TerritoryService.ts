@@ -113,6 +113,22 @@ const resolveOwnerNames = async (territories: Territory[]): Promise<void> => {
 };
 
 export const TerritoryService = {
+    async getTerritoryById(territoryId: string): Promise<Territory | null> {
+        try {
+            const { data, error } = await supabase
+                .from('territories')
+                .select('*')
+                .eq('id', territoryId)
+                .single();
+
+            if (error || !data) return null;
+            return mapCloudTerritory(data);
+        } catch (err) {
+            console.error('Failed to fetch territory:', err);
+            return null;
+        }
+    },
+
     async saveTerritory(territory: Territory): Promise<Territory> {
         // Validate territory before saving
         if (!isValidTerritory(territory)) {

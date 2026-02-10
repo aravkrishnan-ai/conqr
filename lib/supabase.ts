@@ -58,4 +58,5 @@ const clearInvalidSession = async () => {
     }
 };
 
-clearInvalidSession();
+// Exported so App.tsx can call it sequentially during init, avoiding race conditions
+export { clearInvalidSession };

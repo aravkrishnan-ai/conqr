@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { User, Flame, Pencil, Check, X, ChevronRight, MapPin, Clock, Footprints, Bike, PersonStanding, LogOut } from 'lucide-react-native';
+import { User, Flame, Pencil, Check, X, ChevronRight, MapPin, Clock, Footprints, Bike, PersonStanding, LogOut, Map, TrendingUp } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import BottomTabBar from '../components/BottomTabBar';
 import { supabase } from '../lib/supabase';
@@ -160,12 +160,20 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
 
   const streak = 0;
 
+  // Format the hero distance - large display
+  const heroDistance = stats?.totalDistance || 0;
+  const heroDistanceStr = heroDistance < 1000
+    ? `${Math.round(heroDistance)}`
+    : `${(heroDistance / 1000).toFixed(1)}`;
+  const heroDistanceUnit = heroDistance < 1000 ? 'm' : 'km';
+
   return (
     <View style={styles.container}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView
           style={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -175,102 +183,114 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
             />
           }
         >
-          {/* Edit button row */}
-          <View style={styles.editRow}>
-            {isEditing ? (
-              <View style={styles.editActions}>
-                <TouchableOpacity onPress={cancelEditing} style={styles.editActionBtn}>
-                  <X color="#666666" size={20} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={saveEdits} disabled={saving} style={styles.editActionBtn}>
-                  {saving ? (
-                    <ActivityIndicator size="small" color="#E65100" />
+          {/* Dark hero header */}
+          <View style={styles.heroSection}>
+            {/* Top bar: avatar + name + edit */}
+            <View style={styles.topBar}>
+              <View style={styles.profileRow}>
+                <View style={styles.avatarContainer}>
+                  {profile?.avatarUrl ? (
+                    <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
                   ) : (
-                    <Check color="#E65100" size={20} />
+                    <View style={styles.avatarPlaceholder}>
+                      <User color="#E65100" size={24} />
+                    </View>
                   )}
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity onPress={startEditing} style={styles.editBtn}>
-                <Pencil color="#666666" size={18} />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Centered profile header */}
-          <View style={styles.profileHeader}>
-            <View style={styles.avatarContainer}>
-              {profile?.avatarUrl ? (
-                <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <User color="#E65100" size={44} />
                 </View>
+                <View style={styles.nameBlock}>
+                  <Text style={styles.username}>{profile?.username || 'your_username'}</Text>
+                  {profile?.bio && !isEditing ? (
+                    <Text style={styles.bio} numberOfLines={1}>{profile.bio}</Text>
+                  ) : null}
+                </View>
+              </View>
+              {isEditing ? (
+                <View style={styles.editActions}>
+                  <TouchableOpacity onPress={cancelEditing} style={styles.editActionBtn}>
+                    <X color="#999999" size={20} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={saveEdits} disabled={saving} style={styles.editActionBtn}>
+                    {saving ? (
+                      <ActivityIndicator size="small" color="#E65100" />
+                    ) : (
+                      <Check color="#E65100" size={20} />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity onPress={startEditing} style={styles.editBtn}>
+                  <Pencil color="#999999" size={18} />
+                </TouchableOpacity>
               )}
             </View>
-            <Text style={styles.username}>{profile?.username || 'your_username'}</Text>
-            {profile?.bio && !isEditing ? (
-              <Text style={styles.bio}>{profile.bio}</Text>
-            ) : null}
-            <View style={styles.streakBadge}>
-              <Flame color="#FF6B00" size={16} fill="#FF6B00" />
-              <Text style={styles.streakText}>{streak} day streak</Text>
+
+            {/* Bio editor */}
+            {isEditing && (
+              <View style={styles.bioSection}>
+                <TextInput
+                  style={styles.bioInput}
+                  value={editBio}
+                  onChangeText={setEditBio}
+                  placeholder="Add a bio..."
+                  placeholderTextColor="#666666"
+                  multiline
+                  maxLength={120}
+                />
+              </View>
+            )}
+
+            {/* Streak badge */}
+            <View style={styles.streakRow}>
+              <View style={styles.streakBadge}>
+                <Flame color="#FF6B00" size={14} fill="#FF6B00" />
+                <Text style={styles.streakText}>{streak} day streak</Text>
+              </View>
+            </View>
+
+            {/* Hero distance stat */}
+            <View style={styles.heroStat}>
+              <Text style={styles.heroNumber}>{heroDistanceStr}</Text>
+              <Text style={styles.heroUnit}>{heroDistanceUnit}</Text>
+            </View>
+            <Text style={styles.heroLabel}>Total Distance</Text>
+
+            {/* Secondary stats row */}
+            <View style={styles.secondaryStats}>
+              <View style={styles.secondaryStat}>
+                <Text style={styles.secondaryValue}>{stats?.totalActivities || 0}</Text>
+                <Text style={styles.secondaryLabel}>Activities</Text>
+              </View>
+              <View style={styles.secondaryDivider} />
+              <View style={styles.secondaryStat}>
+                <Text style={styles.secondaryValue}>{formatDuration(stats?.totalDuration || 0)}</Text>
+                <Text style={styles.secondaryLabel}>Time</Text>
+              </View>
+              <View style={styles.secondaryDivider} />
+              <View style={styles.secondaryStat}>
+                <Text style={styles.secondaryValue}>{territoryCount}</Text>
+                <Text style={styles.secondaryLabel}>Territories</Text>
+              </View>
             </View>
           </View>
 
-          {/* Bio editor */}
-          {isEditing && (
-            <View style={styles.bioSection}>
-              <TextInput
-                style={styles.bioInput}
-                value={editBio}
-                onChangeText={setEditBio}
-                placeholder="Add a bio..."
-                placeholderTextColor="#999999"
-                multiline
-                maxLength={120}
-              />
+          {/* This Week card */}
+          <View style={styles.weekSection}>
+            <View style={styles.weekHeader}>
+              <TrendingUp color="#E65100" size={18} />
+              <Text style={styles.weekTitle}>This Week</Text>
             </View>
-          )}
-
-          {/* Stats bar */}
-          <View style={styles.statsCard}>
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{stats?.totalActivities || 0}</Text>
-              <Text style={styles.statLabel}>Activities</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{formatDistance(stats?.totalDistance || 0)}</Text>
-              <Text style={styles.statLabel}>Distance</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{formatDuration(stats?.totalDuration || 0)}</Text>
-              <Text style={styles.statLabel}>Time</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>{territoryCount}</Text>
-              <Text style={styles.statLabel}>Territories</Text>
-            </View>
-          </View>
-
-          {/* This Week summary */}
-          <View style={styles.weekCard}>
-            <Text style={styles.weekTitle}>This Week</Text>
-            <View style={styles.weekStatsRow}>
-              <View style={styles.weekStatItem}>
-                <Text style={styles.weekStatValue}>{thisWeekStats.count}</Text>
-                <Text style={styles.weekStatLabel}>Activities</Text>
+            <View style={styles.weekGrid}>
+              <View style={styles.weekItem}>
+                <Text style={styles.weekValue}>{thisWeekStats.count}</Text>
+                <Text style={styles.weekLabel}>Activities</Text>
               </View>
-              <View style={styles.weekStatItem}>
-                <Text style={styles.weekStatValue}>{formatDistance(thisWeekStats.distance)}</Text>
-                <Text style={styles.weekStatLabel}>Distance</Text>
+              <View style={styles.weekItem}>
+                <Text style={styles.weekValue}>{formatDistance(thisWeekStats.distance)}</Text>
+                <Text style={styles.weekLabel}>Distance</Text>
               </View>
-              <View style={styles.weekStatItem}>
-                <Text style={styles.weekStatValue}>{formatDuration(thisWeekStats.duration)}</Text>
-                <Text style={styles.weekStatLabel}>Time</Text>
+              <View style={styles.weekItem}>
+                <Text style={styles.weekValue}>{formatDuration(thisWeekStats.duration)}</Text>
+                <Text style={styles.weekLabel}>Time</Text>
               </View>
             </View>
           </View>
@@ -289,35 +309,30 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
                   key={activity.id}
                   style={styles.activityCard}
                   onPress={() => navigation.navigate('ActivityDetails', { activityId: activity.id })}
+                  activeOpacity={0.7}
                 >
-                  <View style={styles.activityIcon}>
-                    {getActivityTypeIcon(activity.type)}
-                  </View>
-                  <View style={styles.activityInfo}>
-                    <Text style={styles.activityType}>{activity.type}</Text>
-                    <View style={styles.activityStatsRow}>
-                      <View style={styles.activityStat}>
-                        <MapPin color="#999999" size={12} />
-                        <Text style={styles.activityStatText}>
-                          {formatDistance(activity.distance)}
-                        </Text>
-                      </View>
-                      <View style={styles.activityStat}>
-                        <Clock color="#999999" size={12} />
-                        <Text style={styles.activityStatText}>
-                          {Math.floor(activity.duration / 60)}min
-                        </Text>
-                      </View>
+                  <View style={styles.activityLeft}>
+                    <View style={styles.activityIconContainer}>
+                      {getActivityTypeIcon(activity.type)}
                     </View>
-                    <Text style={styles.activityDate}>
-                      {new Date(activity.startTime).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric'
-                      })}
-                    </Text>
+                    <View style={styles.activityDateCol}>
+                      <Text style={styles.activityDay}>
+                        {new Date(activity.startTime).toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}
+                      </Text>
+                      <Text style={styles.activityDayNum}>
+                        {new Date(activity.startTime).getDate()}
+                      </Text>
+                    </View>
                   </View>
-                  <ChevronRight color="#CCCCCC" size={20} />
+                  <View style={styles.activityCenter}>
+                    <Text style={styles.activityType}>{activity.type}</Text>
+                    <View style={styles.activityMetrics}>
+                      <Text style={styles.activityMetricValue}>{formatDistance(activity.distance)}</Text>
+                      <Text style={styles.activityMetricSep}>  </Text>
+                      <Text style={styles.activityMetricValue}>{Math.floor(activity.duration / 60)}min</Text>
+                    </View>
+                  </View>
+                  <ChevronRight color="#CCCCCC" size={18} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -347,183 +362,261 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+    backgroundColor: '#1A1A1A',
   },
   scrollContent: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
-  editRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
+
+  // Hero section - dark header
+  heroSection: {
+    backgroundColor: '#1A1A1A',
     paddingHorizontal: 20,
     paddingTop: 8,
+    paddingBottom: 28,
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  profileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 12,
+  },
+  avatarContainer: {
+    marginRight: 14,
+  },
+  avatarPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(230, 81, 0, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  nameBlock: {
+    flex: 1,
+  },
+  username: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  bio: {
+    fontSize: 13,
+    color: '#999999',
+    marginTop: 2,
   },
   editBtn: {
     padding: 8,
   },
   editActions: {
     flexDirection: 'row',
-    gap: 16,
+    gap: 12,
   },
   editActionBtn: {
     padding: 8,
   },
-  profileHeader: {
-    alignItems: 'center',
-    paddingBottom: 24,
+  bioSection: {
+    marginTop: 12,
   },
-  avatarContainer: {
-    marginBottom: 12,
-  },
-  avatarPlaceholder: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: 'rgba(230, 81, 0, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatar: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-  },
-  username: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#1A1A1A',
-    marginBottom: 4,
-  },
-  bio: {
+  bioInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 12,
+    padding: 14,
+    color: '#FFFFFF',
     fontSize: 14,
-    color: '#666666',
-    textAlign: 'center',
-    marginBottom: 4,
-    paddingHorizontal: 40,
+    minHeight: 72,
+    textAlignVertical: 'top',
+  },
+  streakRow: {
+    flexDirection: 'row',
+    marginTop: 16,
   },
   streakBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 107, 0, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    backgroundColor: 'rgba(255, 107, 0, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
     gap: 4,
-    marginTop: 8,
   },
   streakText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: '#FF6B00',
   },
-  bioSection: {
-    marginHorizontal: 20,
-    marginBottom: 16,
-  },
-  bioInput: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    padding: 16,
-    color: '#1A1A1A',
-    fontSize: 14,
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  statsCard: {
+
+  // Hero stat
+  heroStat: {
     flexDirection: 'row',
-    backgroundColor: '#F5F5F5',
-    marginHorizontal: 20,
-    borderRadius: 16,
-    paddingVertical: 20,
-    marginBottom: 16,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    marginTop: 24,
   },
-  statItem: {
+  heroNumber: {
+    fontSize: 64,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    lineHeight: 68,
+    letterSpacing: -2,
+  },
+  heroUnit: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#E65100',
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  heroLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#666666',
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+    marginTop: 4,
+  },
+
+  // Secondary stats
+  secondaryStats: {
+    flexDirection: 'row',
+    marginTop: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 14,
+    paddingVertical: 16,
+  },
+  secondaryStat: {
     flex: 1,
     alignItems: 'center',
   },
-  statValue: {
-    fontSize: 18,
+  secondaryValue: {
+    fontSize: 17,
     fontWeight: '700',
-    color: '#1A1A1A',
+    color: '#FFFFFF',
     marginBottom: 4,
   },
-  statLabel: {
+  secondaryLabel: {
     fontSize: 11,
     color: '#666666',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  statDivider: {
+  secondaryDivider: {
     width: 1,
     alignSelf: 'stretch',
-    backgroundColor: '#E0E0E0',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
-  weekCard: {
-    backgroundColor: '#F5F5F5',
+
+  // This Week section
+  weekSection: {
     marginHorizontal: 20,
+    marginTop: 20,
+    backgroundColor: '#FAFAFA',
     borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
+    padding: 18,
   },
-  weekTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1A1A1A',
+  weekHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     marginBottom: 16,
   },
-  weekStatsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+  weekTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A1A1A',
   },
-  weekStatItem: {
+  weekGrid: {
+    flexDirection: 'row',
+  },
+  weekItem: {
+    flex: 1,
     alignItems: 'center',
   },
-  weekStatValue: {
+  weekValue: {
     fontSize: 20,
     fontWeight: '700',
     color: '#E65100',
   },
-  weekStatLabel: {
+  weekLabel: {
     fontSize: 11,
-    color: '#666666',
+    color: '#999999',
     marginTop: 4,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+
+  // Empty state
   emptyMessage: {
     fontSize: 14,
     color: '#666666',
     textAlign: 'center',
-    marginBottom: 32,
+    marginVertical: 32,
     fontStyle: 'italic',
   },
+
+  // Activities section
   activitiesSection: {
     paddingHorizontal: 20,
-    marginBottom: 8,
+    marginTop: 24,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '700',
     color: '#1A1A1A',
     marginBottom: 14,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   activityCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 10,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
   },
-  activityIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: 'rgba(230, 81, 0, 0.1)',
+  activityLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  activityIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(230, 81, 0, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
-  activityInfo: {
+  activityDateCol: {
+    alignItems: 'center',
+    width: 32,
+  },
+  activityDay: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#999999',
+    letterSpacing: 0.5,
+  },
+  activityDayNum: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    lineHeight: 22,
+  },
+  activityCenter: {
     flex: 1,
   },
   activityType: {
@@ -533,40 +626,34 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  activityStatsRow: {
+  activityMetrics: {
     flexDirection: 'row',
-    marginTop: 4,
-    gap: 12,
+    marginTop: 3,
   },
-  activityStat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  activityStatText: {
-    fontSize: 12,
+  activityMetricValue: {
+    fontSize: 13,
     color: '#666666',
   },
-  activityDate: {
-    fontSize: 11,
-    color: '#999999',
-    marginTop: 4,
+  activityMetricSep: {
+    fontSize: 13,
+    color: '#CCCCCC',
   },
+
+  // Sign out
   signOutButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F5F5F5',
     paddingVertical: 16,
     borderRadius: 12,
     marginHorizontal: 20,
-    marginTop: 12,
+    marginTop: 32,
     marginBottom: 40,
     gap: 8,
   },
   signOutText: {
     color: '#FF3B30',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
   },
 });

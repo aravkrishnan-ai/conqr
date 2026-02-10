@@ -1,13 +1,15 @@
 import * as React from 'react';
-import { View, StyleSheet, Alert } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect } from '@react-navigation/native';
+import { Swords, ShieldAlert, X, User, UserPlus, MapPin, Check } from 'lucide-react-native';
 import MapContainer, { MapContainerHandle } from '../components/MapContainer';
 import BottomTabBar from '../components/BottomTabBar';
 import { Territory, GPSPoint, TerritoryInvasion } from '../lib/types';
 import { TerritoryService } from '../services/TerritoryService';
 import { ActivityService } from '../services/ActivityService';
+import { FriendService } from '../services/FriendService';
 import { LocationService } from '../services/LocationService';
 import { supabase } from '../lib/supabase';
 import { useScreenTracking } from '../lib/useScreenTracking';
@@ -29,30 +31,84 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
   const [currentUserId, setCurrentUserId] = React.useState<string | undefined>(undefined);
   const mapRef = React.useRef<MapContainerHandle>(null);
 
+  // Invasion modal state
+  const [invasionModal, setInvasionModal] = React.useState<{
+    visible: boolean;
+    invasions: TerritoryInvasion[];
+  }>({ visible: false, invasions: [] });
+
+  // Territory popup state
+  const [territoryPopup, setTerritoryPopup] = React.useState<{
+    visible: boolean;
+    ownerId: string;
+    ownerName: string;
+    isOwnTerritory: boolean;
+    friendStatus: 'none' | 'pending' | 'accepted' | 'loading';
+  }>({ visible: false, ownerId: '', ownerName: '', isOwnTerritory: false, friendStatus: 'none' });
+  const [sendingRequest, setSendingRequest] = React.useState(false);
+
+  const formatArea = (sqMeters: number): string => {
+    if (sqMeters >= 1000000) return `${(sqMeters / 1000000).toFixed(4)} km²`;
+    if (sqMeters >= 10000) return `${(sqMeters / 10000).toFixed(2)} ha`;
+    return `${Math.round(sqMeters)} m²`;
+  };
+
   const showInvasionAlert = (invasions: TerritoryInvasion[]) => {
-    const messages = invasions.map(inv => {
-      const areaText = inv.overlapArea >= 1000000
-        ? `${(inv.overlapArea / 1000000).toFixed(4)} km²`
-        : `${Math.round(inv.overlapArea)} m²`;
-      if (inv.territoryWasDestroyed) {
-        return `${inv.invaderUsername || 'Someone'} completely conquered your territory! (${areaText})`;
-      }
-      return `${inv.invaderUsername || 'Someone'} invaded ${areaText} of your territory!`;
+    setInvasionModal({ visible: true, invasions });
+  };
+
+  const dismissInvasionModal = () => {
+    const ids = invasionModal.invasions.map(inv => inv.id).filter(Boolean);
+    TerritoryService.markInvasionsSeen(ids).catch(err => {
+      console.error('Failed to mark invasions seen:', err);
+    });
+    setInvasionModal({ visible: false, invasions: [] });
+  };
+
+  const handleTerritoryPress = React.useCallback(async (territory: { id: string; ownerId: string; ownerName: string }) => {
+    const isOwn = currentUserId === territory.ownerId;
+    setTerritoryPopup({
+      visible: true,
+      ownerId: territory.ownerId,
+      ownerName: territory.ownerName || 'Unknown',
+      isOwnTerritory: isOwn,
+      friendStatus: 'loading',
     });
 
-    Alert.alert(
-      `Territory ${invasions.length === 1 ? 'Invasion' : 'Invasions'}!`,
-      messages.join('\n\n'),
-      [{
-        text: 'OK',
-        onPress: () => {
-          const ids = invasions.map(inv => inv.id).filter(Boolean);
-          TerritoryService.markInvasionsSeen(ids).catch(err => {
-            console.error('Failed to mark invasions seen:', err);
-          });
-        }
-      }]
-    );
+    if (!isOwn && currentUserId) {
+      try {
+        const result = await FriendService.getFriendshipStatus(currentUserId, territory.ownerId);
+        setTerritoryPopup(prev => ({
+          ...prev,
+          friendStatus: result.status === 'accepted' ? 'accepted' : result.status === 'pending' ? 'pending' : 'none',
+        }));
+      } catch {
+        setTerritoryPopup(prev => ({ ...prev, friendStatus: 'none' }));
+      }
+    } else {
+      setTerritoryPopup(prev => ({ ...prev, friendStatus: 'none' }));
+    }
+  }, [currentUserId]);
+
+  const handleSendFriendRequest = async () => {
+    setSendingRequest(true);
+    try {
+      await FriendService.sendFriendRequest(territoryPopup.ownerId);
+      setTerritoryPopup(prev => ({ ...prev, friendStatus: 'pending' }));
+    } catch (err) {
+      console.error('Failed to send friend request:', err);
+    } finally {
+      setSendingRequest(false);
+    }
+  };
+
+  const handleViewProfile = () => {
+    setTerritoryPopup(prev => ({ ...prev, visible: false }));
+    if (territoryPopup.isOwnTerritory) {
+      navigation.navigate('Profile');
+    } else {
+      navigation.navigate('UserProfile', { userId: territoryPopup.ownerId });
+    }
   };
 
   // Reload territories every time the screen comes into focus (including mount)
@@ -148,11 +204,13 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
     }
   };
 
+  const hasDestroyed = invasionModal.invasions.some(inv => inv.territoryWasDestroyed);
+
   return (
     <View style={styles.container}>
       <StatusBar style="dark" />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        <View style={styles.mapContainer}>
+        <View style={styles.mapWrapper}>
           <MapContainer
             ref={mapRef}
             location={location}
@@ -160,10 +218,164 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
             territories={territories}
             currentUserId={currentUserId}
             style={styles.map}
+            onTerritoryPress={handleTerritoryPress}
           />
         </View>
       </SafeAreaView>
       <BottomTabBar activeTab="home" onTabPress={handleTabPress} />
+
+      {/* Territory tap popup */}
+      <Modal
+        visible={territoryPopup.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTerritoryPopup(prev => ({ ...prev, visible: false }))}
+      >
+        <TouchableOpacity
+          style={styles.popupBackdrop}
+          activeOpacity={1}
+          onPress={() => setTerritoryPopup(prev => ({ ...prev, visible: false }))}
+        >
+          <View style={styles.popupContainer}>
+            <View style={styles.popupHandle} />
+
+            <TouchableOpacity
+              style={styles.popupProfileRow}
+              onPress={handleViewProfile}
+              activeOpacity={0.7}
+            >
+              <View style={styles.popupAvatar}>
+                <User color="#E65100" size={20} />
+              </View>
+              <View style={styles.popupUserInfo}>
+                <Text style={styles.popupUsername} numberOfLines={1}>
+                  {territoryPopup.isOwnTerritory ? 'Your Territory' : territoryPopup.ownerName}
+                </Text>
+                <Text style={styles.popupHint}>
+                  {territoryPopup.isOwnTerritory ? 'Tap to view profile' : 'Tap to view profile'}
+                </Text>
+              </View>
+              <MapPin color="#999999" size={16} />
+            </TouchableOpacity>
+
+            {!territoryPopup.isOwnTerritory && (
+              <View style={styles.popupActions}>
+                {territoryPopup.friendStatus === 'loading' ? (
+                  <View style={styles.popupActionBtn}>
+                    <ActivityIndicator size="small" color="#E65100" />
+                  </View>
+                ) : territoryPopup.friendStatus === 'accepted' ? (
+                  <View style={[styles.popupActionBtn, styles.popupActionBtnAccepted]}>
+                    <Check color="#10B981" size={16} />
+                    <Text style={styles.popupActionTextAccepted}>Friends</Text>
+                  </View>
+                ) : territoryPopup.friendStatus === 'pending' ? (
+                  <View style={[styles.popupActionBtn, styles.popupActionBtnPending]}>
+                    <UserPlus color="#999999" size={16} />
+                    <Text style={styles.popupActionTextPending}>Request Sent</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.popupActionBtn, styles.popupActionBtnAdd]}
+                    onPress={handleSendFriendRequest}
+                    disabled={sendingRequest}
+                  >
+                    {sendingRequest ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <UserPlus color="#FFFFFF" size={16} />
+                        <Text style={styles.popupActionTextAdd}>Add Friend</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Invasion modal */}
+      <Modal
+        visible={invasionModal.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={dismissInvasionModal}
+      >
+        <View style={styles.invasionBackdrop}>
+          <View style={styles.invasionContainer}>
+            <TouchableOpacity
+              style={styles.invasionClose}
+              onPress={dismissInvasionModal}
+            >
+              <X color="#999999" size={24} />
+            </TouchableOpacity>
+
+            <View style={[styles.invasionIconCircle, hasDestroyed && styles.invasionIconCircleDestroyed]}>
+              {hasDestroyed ? (
+                <ShieldAlert color="#FFFFFF" size={32} />
+              ) : (
+                <Swords color="#FFFFFF" size={32} />
+              )}
+            </View>
+
+            <Text style={styles.invasionTitle}>
+              {invasionModal.invasions.length === 1
+                ? 'Territory Invaded!'
+                : `${invasionModal.invasions.length} Invasions!`}
+            </Text>
+
+            <ScrollView
+              style={styles.invasionList}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
+              {invasionModal.invasions.map((inv, index) => (
+                <View
+                  key={inv.id || index}
+                  style={[
+                    styles.invasionCard,
+                    inv.territoryWasDestroyed && styles.invasionCardDestroyed,
+                  ]}
+                >
+                  <View style={styles.invasionCardHeader}>
+                    <View style={styles.invasionUserBadge}>
+                      <User color="#E65100" size={14} />
+                    </View>
+                    <Text style={styles.invasionUsername} numberOfLines={1}>
+                      {inv.invaderUsername || 'Someone'}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.invasionDescription}>
+                    {inv.territoryWasDestroyed
+                      ? 'Completely conquered your territory!'
+                      : 'Invaded part of your territory'}
+                  </Text>
+
+                  <View style={styles.invasionAreaRow}>
+                    <Swords color={inv.territoryWasDestroyed ? '#FF3B30' : '#E65100'} size={14} />
+                    <Text style={[
+                      styles.invasionAreaText,
+                      inv.territoryWasDestroyed && styles.invasionAreaTextDestroyed,
+                    ]}>
+                      {formatArea(inv.overlapArea)} {inv.territoryWasDestroyed ? 'lost' : 'taken'}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.invasionDismissBtn}
+              onPress={dismissInvasionModal}
+            >
+              <Text style={styles.invasionDismissText}>Dismiss</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -176,11 +388,207 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  mapContainer: {
+  mapWrapper: {
     flex: 1,
     overflow: 'hidden',
   },
   map: {
     flex: 1,
+  },
+
+  // Territory popup
+  popupBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  popupContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 32,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  popupHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  popupProfileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  popupAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(230, 81, 0, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  popupUserInfo: {
+    flex: 1,
+  },
+  popupUsername: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1A1A1A',
+  },
+  popupHint: {
+    fontSize: 13,
+    color: '#999999',
+    marginTop: 2,
+  },
+  popupActions: {
+    marginTop: 16,
+  },
+  popupActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  popupActionBtnAdd: {
+    backgroundColor: '#E65100',
+  },
+  popupActionBtnPending: {
+    backgroundColor: '#F5F5F5',
+  },
+  popupActionBtnAccepted: {
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+  },
+  popupActionTextAdd: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  popupActionTextPending: {
+    color: '#999999',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  popupActionTextAccepted: {
+    color: '#10B981',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+
+  // Invasion modal
+  invasionBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  invasionContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+    position: 'relative' as const,
+  },
+  invasionClose: {
+    position: 'absolute' as const,
+    top: 16,
+    right: 16,
+    padding: 4,
+    zIndex: 1,
+  },
+  invasionIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#E65100',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  invasionIconCircleDestroyed: {
+    backgroundColor: '#FF3B30',
+  },
+  invasionTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 20,
+    textAlign: 'center' as const,
+  },
+  invasionList: {
+    width: '100%',
+    maxHeight: 260,
+    marginBottom: 20,
+  },
+  invasionCard: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+  },
+  invasionCardDestroyed: {
+    backgroundColor: 'rgba(255, 59, 48, 0.08)',
+  },
+  invasionCardHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  invasionUserBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(230, 81, 0, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  invasionUsername: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1A1A1A',
+    flex: 1,
+  },
+  invasionDescription: {
+    fontSize: 13,
+    color: '#666666',
+    marginBottom: 8,
+  },
+  invasionAreaRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center',
+    gap: 6,
+  },
+  invasionAreaText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#E65100',
+  },
+  invasionAreaTextDestroyed: {
+    color: '#FF3B30',
+  },
+  invasionDismissBtn: {
+    backgroundColor: '#E65100',
+    paddingVertical: 14,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+  },
+  invasionDismissText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

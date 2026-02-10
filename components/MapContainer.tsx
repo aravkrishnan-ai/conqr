@@ -16,6 +16,7 @@ interface MapContainerProps {
     currentUserId?: string;
     style?: any;
     onReady?: () => void;
+    onTerritoryPress?: (territory: { id: string; ownerId: string; ownerName: string }) => void;
 }
 
 // Static HTML that never changes - prevents WebView reloads
@@ -80,34 +81,6 @@ const MAP_HTML = `
             100% { transform: scale(2); opacity: 0; }
         }
         .leaflet-control-attribution { display: none; }
-        /* Territory label styling */
-        .territory-label {
-            background: rgba(252, 76, 2, 0.9);
-            color: white;
-            font-size: 11px;
-            font-weight: 600;
-            padding: 4px 8px;
-            border-radius: 4px;
-            white-space: nowrap;
-            border: none;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-        .territory-label::before {
-            content: '';
-            position: absolute;
-            bottom: -6px;
-            left: 50%;
-            margin-left: -6px;
-            border-width: 6px 6px 0;
-            border-style: solid;
-            border-color: rgba(252, 76, 2, 0.9) transparent transparent;
-        }
-        .other-user-territory {
-            background: rgba(100, 100, 100, 0.85);
-        }
-        .other-user-territory::before {
-            border-color: rgba(100, 100, 100, 0.85) transparent transparent;
-        }
         .loading-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
@@ -142,6 +115,26 @@ const MAP_HTML = `
             var isFirstLocation = true;
             var mapReady = false;
 
+            // Deterministic color palette for user territories
+            var USER_COLORS = [
+                '#FC4C02', '#3B82F6', '#10B981', '#F59E0B', '#EF4444',
+                '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16', '#F97316',
+                '#6366F1', '#14B8A6', '#E879F9', '#22D3EE', '#A3E635',
+                '#FB923C', '#818CF8', '#2DD4BF', '#C084FC', '#34D399'
+            ];
+
+            // Hash a userId string to a consistent color index
+            function userColor(userId) {
+                if (!userId) return '#888888';
+                var hash = 0;
+                for (var i = 0; i < userId.length; i++) {
+                    hash = ((hash << 5) - hash) + userId.charCodeAt(i);
+                    hash = hash & hash;
+                }
+                var idx = Math.abs(hash) % USER_COLORS.length;
+                return USER_COLORS[idx];
+            }
+
             // Initialize map with default center (will be updated when location arrives)
             map = L.map('map', {
                 zoomControl: false,
@@ -164,14 +157,14 @@ const MAP_HTML = `
                 setTimeout(function() {
                     loadingEl.classList.add('hidden');
                     mapReady = true;
-                    window.ReactNativeWebView.postMessage('ready');
+                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ready' }));
                 }, 300);
             });
             setTimeout(function() {
                 loadingEl.classList.add('hidden');
                 if (!mapReady) {
                     mapReady = true;
-                    window.ReactNativeWebView.postMessage('ready');
+                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ready' }));
                 }
             }, 3000);
 
@@ -269,32 +262,26 @@ const MAP_HTML = `
                 territories.forEach(function(t) {
                     if (t.polygon && t.polygon.length > 2) {
                         var isOwn = currentUserId && t.ownerId === currentUserId;
-                        var color = isOwn ? '#FC4C02' : '#888888';
+                        var color = isOwn ? '#FC4C02' : userColor(t.ownerId);
 
                         var poly = L.polygon(t.polygon, {
                             color: color,
                             weight: 2,
                             opacity: 0.8,
                             fillColor: color,
-                            fillOpacity: isOwn ? 0.2 : 0.12
+                            fillOpacity: isOwn ? 0.25 : 0.2
                         }).addTo(map);
-                        territoryLayers.push(poly);
 
-                        // Add label with owner name if available
-                        if (t.ownerName && t.center) {
-                            var labelClass = isOwn ? 'territory-label' : 'territory-label other-user-territory';
-                            var labelText = isOwn ? 'Your Territory' : t.ownerName + "'s territory";
-                            var label = L.marker([t.center[0], t.center[1]], {
-                                icon: L.divIcon({
-                                    className: '',
-                                    html: '<div class="' + labelClass + '">' + labelText + '</div>',
-                                    iconSize: [100, 20],
-                                    iconAnchor: [50, 30]
-                                }),
-                                interactive: false
-                            }).addTo(map);
-                            territoryLayers.push(label);
-                        }
+                        poly.on('click', function() {
+                            window.ReactNativeWebView.postMessage(JSON.stringify({
+                                type: 'territoryPress',
+                                id: t.id,
+                                ownerId: t.ownerId,
+                                ownerName: t.ownerName || ''
+                            }));
+                        });
+
+                        territoryLayers.push(poly);
                     }
                 });
             };
@@ -305,7 +292,7 @@ const MAP_HTML = `
 `;
 
 function MapContainerComponent(
-    { location, path, territories = [], currentUserId, style, onReady }: MapContainerProps,
+    { location, path, territories = [], currentUserId, style, onReady, onTerritoryPress }: MapContainerProps,
     ref: React.Ref<MapContainerHandle>
 ) {
     const webViewRef = React.useRef<WebView>(null);
@@ -323,6 +310,10 @@ function MapContainerComponent(
     const pathThrottleRef = React.useRef<number>(0);
     const LOCATION_THROTTLE = 200;
     const PATH_THROTTLE = 300;
+
+    // Keep onTerritoryPress in a ref so the handleMessage callback stays stable
+    const onTerritoryPressRef = React.useRef(onTerritoryPress);
+    onTerritoryPressRef.current = onTerritoryPress;
 
     const injectScript = React.useCallback((script: string) => {
         if (!webViewRef.current || !isMountedRef.current) return;
@@ -408,7 +399,7 @@ function MapContainerComponent(
         const validTerritories = territories.filter(t =>
             t && t.id && Array.isArray(t.polygon) && t.polygon.length > 2
         );
-        const key = validTerritories.map(t => `${t.id}-${t.ownerName || ''}`).join(',');
+        const key = validTerritories.map(t => `${t.id}-${t.ownerId}`).join(',');
         if (key === lastTerritoriesRef.current) return;
 
         lastTerritoriesRef.current = key;
@@ -431,10 +422,26 @@ function MapContainerComponent(
     }, []);
 
     const handleMessage = React.useCallback((event: any) => {
-        if (event.nativeEvent.data === 'ready') {
-            setIsReady(true);
-            setIsLoading(false);
-            onReady?.();
+        try {
+            const data = JSON.parse(event.nativeEvent.data);
+            if (data.type === 'ready') {
+                setIsReady(true);
+                setIsLoading(false);
+                onReady?.();
+            } else if (data.type === 'territoryPress') {
+                onTerritoryPressRef.current?.({
+                    id: data.id,
+                    ownerId: data.ownerId,
+                    ownerName: data.ownerName,
+                });
+            }
+        } catch {
+            // Legacy: plain string message
+            if (event.nativeEvent.data === 'ready') {
+                setIsReady(true);
+                setIsLoading(false);
+                onReady?.();
+            }
         }
     }, [onReady]);
 

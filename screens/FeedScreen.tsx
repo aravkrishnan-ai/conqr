@@ -317,7 +317,25 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
         )}
 
         {item.postType === 'territory_share' && item.territoryId && (
-          <View style={styles.attachmentCard}>
+          <TouchableOpacity
+            style={styles.attachmentCard}
+            onPress={async () => {
+              try {
+                const territory = await TerritoryService.getTerritoryById(item.territoryId!);
+                if (territory) {
+                  navigation.navigate('Home', {
+                    focusTerritoryLat: territory.center.lat,
+                    focusTerritoryLng: territory.center.lng,
+                  });
+                } else {
+                  Alert.alert('Not Found', 'This territory could not be found.');
+                }
+              } catch {
+                Alert.alert('Error', 'Failed to load territory.');
+              }
+            }}
+            activeOpacity={0.7}
+          >
             <View style={styles.attachmentIcon}>
               <Map color="#E65100" size={20} />
             </View>
@@ -325,7 +343,7 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
               <Text style={styles.attachmentTitle}>Territory Claimed</Text>
               <Text style={styles.attachmentDetail}>Tap to view on map</Text>
             </View>
-          </View>
+          </TouchableOpacity>
         )}
 
         <View style={styles.postActions}>

@@ -2,12 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { ArrowLeft, User, Activity, MapPin, Clock, Calendar, Share2 } from 'lucide-react-native';
+import { ArrowLeft, User, Activity, MapPin, Clock, Calendar } from 'lucide-react-native';
 import { AuthService } from '../services/AuthService';
 import { ActivityService } from '../services/ActivityService';
 import { TerritoryService } from '../services/TerritoryService';
 import { UserProfile, Activity as ActivityType, Territory } from '../lib/types';
-import SharePreviewModal from '../components/SharePreviewModal';
 import { useScreenTracking } from '../lib/useScreenTracking';
 
 interface UserProfileScreenProps {
@@ -28,8 +27,6 @@ export default function UserProfileScreen({ navigation, route }: UserProfileScre
   const [totalArea, setTotalArea] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [selectedTerritory, setSelectedTerritory] = useState<Territory | null>(null);
 
   const loadData = async () => {
     if (!userId) {
@@ -214,15 +211,6 @@ export default function UserProfileScreen({ navigation, route }: UserProfileScre
                     <Text style={styles.territoryArea}>{formatArea(territory.area)}</Text>
                     <Text style={styles.territoryDate}>{formatDate(territory.claimedAt)}</Text>
                   </View>
-                  <TouchableOpacity
-                    style={styles.territoryShareBtn}
-                    onPress={() => {
-                      setSelectedTerritory(territory);
-                      setShowShareModal(true);
-                    }}
-                  >
-                    <Share2 color="#E65100" size={16} />
-                  </TouchableOpacity>
                 </View>
               ))}
             </View>
@@ -262,12 +250,6 @@ export default function UserProfileScreen({ navigation, route }: UserProfileScre
           </View>
         </ScrollView>
       </SafeAreaView>
-      <SharePreviewModal
-        visible={showShareModal}
-        onClose={() => setShowShareModal(false)}
-        cardType="territory"
-        territory={selectedTerritory || undefined}
-      />
     </View>
   );
 }
@@ -410,15 +392,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#999999',
     marginTop: 2,
-  },
-  territoryShareBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(230, 81, 0, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
   },
   activitiesSection: {
     paddingHorizontal: 20,

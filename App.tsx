@@ -18,7 +18,7 @@ import UserProfileScreen from './screens/UserProfileScreen';
 import LeaderboardScreen from './screens/LeaderboardScreen';
 import FriendsScreen from './screens/FriendsScreen';
 import FeedScreen from './screens/FeedScreen';
-import { supabase } from './lib/supabase';
+import { supabase, clearInvalidSession } from './lib/supabase';
 import { AuthService, handleAuthCallbackUrl } from './services/AuthService';
 import { AnalyticsService } from './services/AnalyticsService';
 import { AuthContext } from './contexts/AuthContext';
@@ -102,16 +102,34 @@ function AppNavigator() {
 
   useEffect(() => {
     const init = async () => {
-      const initialUrl = await Linking.getInitialURL();
-      if (initialUrl && initialUrl.includes('access_token')) {
-        console.log('App opened via auth deep link:', initialUrl);
-        await handleAuthCallbackUrl(initialUrl);
-      }
+      try {
+        await clearInvalidSession();
 
-      await refreshAuthState();
-      setIsLoading(false);
+        const initialUrl = await Linking.getInitialURL();
+        if (initialUrl && initialUrl.includes('access_token')) {
+          console.log('App opened via auth deep link:', initialUrl);
+          await handleAuthCallbackUrl(initialUrl);
+        }
+
+        await refreshAuthState();
+      } catch (err) {
+        console.error('App init error:', err);
+      } finally {
+        setIsLoading(false);
+      }
     };
-    init();
+
+    // Safety timeout — if init hangs (e.g. slow AsyncStorage on cold start),
+    // stop the loading spinner after 5s so the app is still usable
+    const timeout = setTimeout(() => {
+      setIsLoading((current) => {
+        if (current) console.warn('App init timed out, proceeding anyway');
+        return false;
+      });
+    }, 5000);
+
+    init().then(() => clearTimeout(timeout));
+
 
     const linkingSub = Linking.addEventListener('url', async (event) => {
       console.log('Deep link received:', event.url);
@@ -197,8 +215,7 @@ export default function App() {
         if (update.isAvailable) {
           console.log('Update available, downloading...');
           await Updates.fetchUpdateAsync();
-          console.log('Update downloaded, reloading...');
-          await Updates.reloadAsync();
+          console.log('Update downloaded, will apply on next launch');
         }
       } catch (err) {
         console.log('Update check failed:', err);
