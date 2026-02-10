@@ -11,7 +11,7 @@ import {
   X, Send, MapPin, Clock, Map, Trash2, Activity,
   Footprints, Bike, PersonStanding
 } from 'lucide-react-native';
-import Svg, { Polyline as SvgPolyline, Circle, Polygon as SvgPolygon } from 'react-native-svg';
+import Svg, { Polyline as SvgPolyline, Circle, Polygon as SvgPolygon, Line, Rect, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { useFocusEffect } from '@react-navigation/native';
 import BottomTabBar from '../components/BottomTabBar';
 import { FeedService } from '../services/FeedService';
@@ -28,7 +28,7 @@ import {
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CARD_MAP_WIDTH = SCREEN_WIDTH - 72; // 20px list padding * 2 + 16px card padding * 2
-const CARD_MAP_HEIGHT = 180;
+const CARD_MAP_HEIGHT = 220;
 
 interface FeedScreenProps {
   navigation: any;
@@ -280,6 +280,24 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
     setShowCreateModal(true);
   };
 
+  // Render subtle grid background for map cards (Strava-like depth)
+  const renderMapGrid = () => {
+    const lines = [];
+    const gridSpacing = 28;
+    const gridColor = 'rgba(255, 255, 255, 0.04)';
+    for (let x = gridSpacing; x < CARD_MAP_WIDTH; x += gridSpacing) {
+      lines.push(
+        <Line key={`v${x}`} x1={x} y1={0} x2={x} y2={CARD_MAP_HEIGHT} stroke={gridColor} strokeWidth={0.5} />
+      );
+    }
+    for (let y = gridSpacing; y < CARD_MAP_HEIGHT; y += gridSpacing) {
+      lines.push(
+        <Line key={`h${y}`} x1={0} y1={y} x2={CARD_MAP_WIDTH} y2={y} stroke={gridColor} strokeWidth={0.5} />
+      );
+    }
+    return lines;
+  };
+
   // Render inline SVG route map for activity posts
   const renderActivityMap = (activity: ActivityType) => {
     const flatPath = flattenPolylines(activity.polylines || []);
@@ -301,37 +319,74 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
             height={CARD_MAP_HEIGHT}
             viewBox={`0 0 ${CARD_MAP_WIDTH} ${CARD_MAP_HEIGHT}`}
           >
-            {/* Glow layer */}
+            <Defs>
+              <LinearGradient id="routeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <Stop offset="0%" stopColor="#FC4C02" stopOpacity={1} />
+                <Stop offset="100%" stopColor="#FDBA74" stopOpacity={1} />
+              </LinearGradient>
+            </Defs>
+            {/* Dark background */}
+            <Rect x={0} y={0} width={CARD_MAP_WIDTH} height={CARD_MAP_HEIGHT} fill="#111111" />
+            {/* Grid lines for depth */}
+            {renderMapGrid()}
+            {/* Wide soft glow */}
             <SvgPolyline
               points={svgData.points}
               fill="none"
-              stroke="rgba(230, 81, 0, 0.3)"
-              strokeWidth={8}
+              stroke="rgba(252, 76, 2, 0.12)"
+              strokeWidth={14}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-            {/* Main route */}
+            {/* Inner glow */}
             <SvgPolyline
               points={svgData.points}
               fill="none"
-              stroke="#FFFFFF"
-              strokeWidth={2.5}
+              stroke="rgba(252, 76, 2, 0.25)"
+              strokeWidth={6}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-            {/* Start marker */}
+            {/* Main route line */}
+            <SvgPolyline
+              points={svgData.points}
+              fill="none"
+              stroke="url(#routeGradient)"
+              strokeWidth={3}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {/* Start marker - outer ring */}
             <Circle
               cx={svgData.startPoint.x}
               cy={svgData.startPoint.y}
-              r={5}
+              r={8}
+              fill="none"
+              stroke="rgba(255, 255, 255, 0.5)"
+              strokeWidth={1.5}
+            />
+            {/* Start marker - inner dot */}
+            <Circle
+              cx={svgData.startPoint.x}
+              cy={svgData.startPoint.y}
+              r={4}
               fill="#00D26A"
             />
-            {/* End marker */}
+            {/* End marker - outer ring */}
             <Circle
               cx={svgData.endPoint.x}
               cy={svgData.endPoint.y}
-              r={5}
-              fill="#E65100"
+              r={8}
+              fill="none"
+              stroke="rgba(255, 255, 255, 0.5)"
+              strokeWidth={1.5}
+            />
+            {/* End marker - inner dot */}
+            <Circle
+              cx={svgData.endPoint.x}
+              cy={svgData.endPoint.y}
+              r={4}
+              fill="#FC4C02"
             />
           </Svg>
         </View>
@@ -387,20 +442,38 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
             height={CARD_MAP_HEIGHT}
             viewBox={`0 0 ${CARD_MAP_WIDTH} ${CARD_MAP_HEIGHT}`}
           >
-            {/* Glow fill */}
+            <Defs>
+              <LinearGradient id="territoryFill" x1="0%" y1="0%" x2="0%" y2="100%">
+                <Stop offset="0%" stopColor="#FC4C02" stopOpacity={0.3} />
+                <Stop offset="100%" stopColor="#FC4C02" stopOpacity={0.1} />
+              </LinearGradient>
+            </Defs>
+            {/* Dark background */}
+            <Rect x={0} y={0} width={CARD_MAP_WIDTH} height={CARD_MAP_HEIGHT} fill="#111111" />
+            {/* Grid lines for depth */}
+            {renderMapGrid()}
+            {/* Outer glow */}
             <SvgPolygon
               points={svgData.points}
-              fill="rgba(230, 81, 0, 0.2)"
-              stroke="rgba(230, 81, 0, 0.4)"
-              strokeWidth={6}
+              fill="none"
+              stroke="rgba(252, 76, 2, 0.15)"
+              strokeWidth={8}
               strokeLinejoin="round"
             />
-            {/* Border */}
+            {/* Filled polygon */}
             <SvgPolygon
               points={svgData.points}
-              fill="rgba(230, 81, 0, 0.15)"
-              stroke="#E65100"
-              strokeWidth={2}
+              fill="url(#territoryFill)"
+              stroke="rgba(252, 76, 2, 0.5)"
+              strokeWidth={3}
+              strokeLinejoin="round"
+            />
+            {/* Crisp border */}
+            <SvgPolygon
+              points={svgData.points}
+              fill="none"
+              stroke="#FC4C02"
+              strokeWidth={1.5}
               strokeLinejoin="round"
             />
           </Svg>
@@ -891,7 +964,7 @@ const styles = StyleSheet.create({
 
   // Strava-like activity map card
   activityMapCard: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#111111',
     borderRadius: 12,
     overflow: 'hidden',
     marginBottom: 12,
@@ -899,13 +972,14 @@ const styles = StyleSheet.create({
   mapContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 12,
   },
   activityStatsRow: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: '#141414',
   },
   activityTypeBadge: {
     flexDirection: 'row',
@@ -937,7 +1011,7 @@ const styles = StyleSheet.create({
   },
   activityStatValue: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '700',
   },
   activityStatLabel: {
