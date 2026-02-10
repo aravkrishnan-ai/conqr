@@ -133,21 +133,22 @@ function AppNavigator() {
 
 
     const linkingSub = Linking.addEventListener('url', async (event) => {
-      console.log('Deep link received:', event.url);
       if (event.url.includes('access_token') || event.url.includes('error')) {
-        await handleAuthCallbackUrl(event.url);
+        const success = await handleAuthCallbackUrl(event.url);
+        if (success) {
+          await refreshAuthState();
+        }
       }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event);
       if (session) {
+        setIsAuthenticated(true);
         const meta = session.user?.user_metadata;
         setSuggestedUsername(meta?.name || meta?.full_name || session.user?.email?.split('@')[0] || '');
         setUserAvatarUrl(meta?.avatar_url || null);
         const profile = await AuthService.getCurrentProfile();
         setHasProfile(!!profile?.username);
-        setIsAuthenticated(true);
       } else {
         setIsAuthenticated(false);
         setHasProfile(false);

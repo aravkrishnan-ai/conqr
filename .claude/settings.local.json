@@ -98,7 +98,13 @@
       "Bash(keytool:*)",
       "Bash(openssl version:*)",
       "Bash(openssl req:*)",
-      "Bash(openssl pkcs12:*)"
+      "Bash(openssl pkcs12:*)",
+      "Bash(gh auth status:*)",
+      "Bash(git config:*)",
+      "Bash(git ls-tree:*)",
+      "WebFetch(domain:aravkrishnan-ai.github.io)",
+      "Bash(CI=1 npx eas update:*)",
+      "Bash(CI=1 npx eas-cli:*)"
     ]
   }
 }
