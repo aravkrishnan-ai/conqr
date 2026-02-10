@@ -200,7 +200,19 @@ export default function UserProfileScreen({ navigation, route }: UserProfileScre
             <View style={styles.territoriesSection}>
               <Text style={styles.sectionTitle}>Territories ({territories.length})</Text>
               {territories.slice(0, 5).map((territory) => (
-                <View key={territory.id} style={styles.territoryCard}>
+                <TouchableOpacity
+                  key={territory.id}
+                  style={styles.territoryCard}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    if (territory.center && territory.center.lat && territory.center.lng) {
+                      navigation.navigate('Home', {
+                        focusTerritoryLat: territory.center.lat,
+                        focusTerritoryLng: territory.center.lng,
+                      });
+                    }
+                  }}
+                >
                   <View style={styles.territoryIcon}>
                     <MapPin color="#E65100" size={20} />
                   </View>
@@ -211,7 +223,8 @@ export default function UserProfileScreen({ navigation, route }: UserProfileScre
                     <Text style={styles.territoryArea}>{formatArea(territory.area)}</Text>
                     <Text style={styles.territoryDate}>{formatDate(territory.claimedAt)}</Text>
                   </View>
-                </View>
+                  <ArrowLeft color="#CCCCCC" size={16} style={{ transform: [{ rotate: '180deg' }] }} />
+                </TouchableOpacity>
               ))}
             </View>
           )}
