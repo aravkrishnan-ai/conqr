@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, TextInput, Alert, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { User, Flame, Pencil, Check, X, ChevronRight, MapPin, Clock, Footprints, Bike, PersonStanding, LogOut, Map, TrendingUp, Trash2, Shield } from 'lucide-react-native';
@@ -145,9 +145,7 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
   };
 
   const handlePrivacyPolicy = () => {
-    Linking.openURL('https://aravkrishnan-ai.github.io/conqr/privacy-policy.html').catch(() => {
-      Alert.alert('Error', 'Could not open privacy policy');
-    });
+    navigation.navigate('PrivacyPolicy');
   };
 
   const startEditing = () => {

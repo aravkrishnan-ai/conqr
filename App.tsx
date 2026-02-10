@@ -15,6 +15,7 @@ import ProfileSetupScreen from './screens/ProfileSetupScreen';
 import ActivityDetailsScreen from './screens/ActivityDetailsScreen';
 import SearchScreen from './screens/SearchScreen';
 import UserProfileScreen from './screens/UserProfileScreen';
+import PrivacyPolicyScreen from './screens/PrivacyPolicyScreen';
 import LeaderboardScreen from './screens/LeaderboardScreen';
 import FriendsScreen from './screens/FriendsScreen';
 import FeedScreen from './screens/FeedScreen';
@@ -192,6 +193,7 @@ function AppNavigator() {
             <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
             <Stack.Screen name="ActivityDetails" component={ActivityDetailsScreen} />
             <Stack.Screen name="UserProfile" component={UserProfileScreen} />
+            <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
           </>
         )}
       </Stack.Navigator>
