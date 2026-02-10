@@ -229,7 +229,7 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
 
   return (
     <View style={styles.container}>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <ScrollView
           style={styles.scrollContent}
@@ -243,27 +243,11 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
             />
           }
         >
-          {/* Dark hero header */}
-          <View style={styles.heroSection}>
-            {/* Top bar: avatar + name + edit */}
-            <View style={styles.topBar}>
-              <View style={styles.profileRow}>
-                <View style={styles.avatarContainer}>
-                  {profile?.avatarUrl ? (
-                    <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
-                  ) : (
-                    <View style={styles.avatarPlaceholder}>
-                      <User color="#E65100" size={24} />
-                    </View>
-                  )}
-                </View>
-                <View style={styles.nameBlock}>
-                  <Text style={styles.username}>{profile?.username || 'your_username'}</Text>
-                  {profile?.bio && !isEditing ? (
-                    <Text style={styles.bio} numberOfLines={1}>{profile.bio}</Text>
-                  ) : null}
-                </View>
-              </View>
+          {/* Profile header */}
+          <View style={styles.headerSection}>
+            <View style={styles.headerTop}>
+              <View style={{ width: 36 }} />
+              <Text style={styles.headerTitle}>Profile</Text>
               {isEditing ? (
                 <View style={styles.editActions}>
                   <TouchableOpacity onPress={cancelEditing} style={styles.editActionBtn}>
@@ -284,6 +268,23 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
               )}
             </View>
 
+            {/* Centered avatar */}
+            <View style={styles.avatarSection}>
+              <View style={styles.avatarRing}>
+                {profile?.avatarUrl ? (
+                  <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
+                ) : (
+                  <View style={styles.avatarPlaceholder}>
+                    <User color="#E65100" size={36} />
+                  </View>
+                )}
+              </View>
+              <Text style={styles.username}>{profile?.username || 'your_username'}</Text>
+              {profile?.bio && !isEditing ? (
+                <Text style={styles.bio} numberOfLines={2}>{profile.bio}</Text>
+              ) : null}
+            </View>
+
             {/* Bio editor */}
             {isEditing && (
               <View style={styles.bioSection}>
@@ -292,52 +293,42 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
                   value={editBio}
                   onChangeText={setEditBio}
                   placeholder="Add a bio..."
-                  placeholderTextColor="#666666"
+                  placeholderTextColor="#AAAAAA"
                   multiline
                   maxLength={120}
                 />
               </View>
             )}
+          </View>
 
-            {/* Streak badge */}
-            <View style={styles.streakRow}>
-              <View style={styles.streakBadge}>
-                <Flame color="#FF6B00" size={14} fill="#FF6B00" />
-                <Text style={styles.streakText}>{streak} day streak</Text>
-              </View>
+          {/* Stats strip */}
+          <View style={styles.statsStrip}>
+            <View style={styles.statCell}>
+              <Text style={styles.statNumber}>{stats?.totalActivities || 0}</Text>
+              <Text style={styles.statLabel}>Activities</Text>
             </View>
-
-            {/* Hero distance stat */}
-            <View style={styles.heroStat}>
-              <Text style={styles.heroNumber}>{heroDistanceStr}</Text>
-              <Text style={styles.heroUnit}>{heroDistanceUnit}</Text>
+            <View style={styles.statDivider} />
+            <View style={styles.statCell}>
+              <Text style={styles.statNumber}>{heroDistanceStr}<Text style={styles.statUnit}> {heroDistanceUnit}</Text></Text>
+              <Text style={styles.statLabel}>Distance</Text>
             </View>
-            <Text style={styles.heroLabel}>Total Distance</Text>
-
-            {/* Secondary stats row */}
-            <View style={styles.secondaryStats}>
-              <View style={styles.secondaryStat}>
-                <Text style={styles.secondaryValue}>{stats?.totalActivities || 0}</Text>
-                <Text style={styles.secondaryLabel}>Activities</Text>
-              </View>
-              <View style={styles.secondaryDivider} />
-              <View style={styles.secondaryStat}>
-                <Text style={styles.secondaryValue}>{formatDuration(stats?.totalDuration || 0)}</Text>
-                <Text style={styles.secondaryLabel}>Time</Text>
-              </View>
-              <View style={styles.secondaryDivider} />
-              <View style={styles.secondaryStat}>
-                <Text style={styles.secondaryValue}>{territoryCount}</Text>
-                <Text style={styles.secondaryLabel}>Territories</Text>
-              </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statCell}>
+              <Text style={styles.statNumber}>{formatDuration(stats?.totalDuration || 0)}</Text>
+              <Text style={styles.statLabel}>Time</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statCell}>
+              <Text style={styles.statNumber}>{territoryCount}</Text>
+              <Text style={styles.statLabel}>Territories</Text>
             </View>
           </View>
 
           {/* This Week card */}
-          <View style={styles.weekSection}>
-            <View style={styles.weekHeader}>
-              <TrendingUp color="#E65100" size={18} />
-              <Text style={styles.weekTitle}>This Week</Text>
+          <View style={styles.weekCard}>
+            <View style={styles.weekCardHeader}>
+              <View style={styles.weekCardAccent} />
+              <Text style={styles.weekCardTitle}>This Week</Text>
             </View>
             <View style={styles.weekGrid}>
               <View style={styles.weekItem}>
@@ -357,7 +348,11 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
 
           {/* Empty state */}
           {activities.length === 0 && (
-            <Text style={styles.emptyMessage}>do your first run !</Text>
+            <View style={styles.emptyState}>
+              <Footprints color="#DDDDDD" size={40} />
+              <Text style={styles.emptyText}>No activities yet</Text>
+              <Text style={styles.emptySubtext}>Record your first run to see it here</Text>
+            </View>
           )}
 
           {/* Recent Activities */}
@@ -371,53 +366,63 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
                   onPress={() => navigation.navigate('ActivityDetails', { activityId: activity.id })}
                   activeOpacity={0.7}
                 >
-                  <View style={styles.activityLeft}>
-                    <View style={styles.activityIconContainer}>
-                      {getActivityTypeIcon(activity.type)}
+                  <View style={styles.activityAccent} />
+                  <View style={styles.activityBody}>
+                    <View style={styles.activityHeader}>
+                      <View style={styles.activityTypeRow}>
+                        {getActivityTypeIcon(activity.type)}
+                        <Text style={styles.activityType}>
+                          {activity.type === 'RUN' ? 'Run' : activity.type === 'RIDE' ? 'Ride' : 'Walk'}
+                        </Text>
+                      </View>
+                      <Text style={styles.activityDate}>
+                        {new Date(activity.startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </Text>
                     </View>
-                    <View style={styles.activityDateCol}>
-                      <Text style={styles.activityDay}>
-                        {new Date(activity.startTime).toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}
-                      </Text>
-                      <Text style={styles.activityDayNum}>
-                        {new Date(activity.startTime).getDate()}
-                      </Text>
+                    <View style={styles.activityMetricsRow}>
+                      <View style={styles.activityMetric}>
+                        <Text style={styles.metricValue}>{formatDistance(activity.distance)}</Text>
+                        <Text style={styles.metricLabel}>Distance</Text>
+                      </View>
+                      <View style={styles.activityMetric}>
+                        <Text style={styles.metricValue}>{formatDuration(activity.duration)}</Text>
+                        <Text style={styles.metricLabel}>Time</Text>
+                      </View>
+                      {activity.averageSpeed ? (
+                        <View style={styles.activityMetric}>
+                          <Text style={styles.metricValue}>{(activity.averageSpeed * 3.6).toFixed(1)} km/h</Text>
+                          <Text style={styles.metricLabel}>Pace</Text>
+                        </View>
+                      ) : null}
                     </View>
                   </View>
-                  <View style={styles.activityCenter}>
-                    <Text style={styles.activityType}>{activity.type}</Text>
-                    <View style={styles.activityMetrics}>
-                      <Text style={styles.activityMetricValue}>{formatDistance(activity.distance)}</Text>
-                      <Text style={styles.activityMetricSep}>  </Text>
-                      <Text style={styles.activityMetricValue}>{Math.floor(activity.duration / 60)}min</Text>
-                    </View>
-                  </View>
-                  <ChevronRight color="#CCCCCC" size={18} />
+                  <ChevronRight color="#CCCCCC" size={18} style={{ marginRight: 12 }} />
                 </TouchableOpacity>
               ))}
             </View>
           )}
 
-          {/* Settings section */}
+          {/* Settings */}
           <View style={styles.settingsSection}>
             <TouchableOpacity style={styles.settingsRow} onPress={handlePrivacyPolicy}>
               <Shield color="#666666" size={18} />
               <Text style={styles.settingsText}>Privacy Policy</Text>
               <ChevronRight color="#CCCCCC" size={16} />
             </TouchableOpacity>
+            <View style={styles.settingsDivider} />
+            <TouchableOpacity style={styles.settingsRow} onPress={handleSignOut}>
+              <LogOut color="#FF3B30" size={18} />
+              <Text style={[styles.settingsText, { color: '#FF3B30' }]}>Sign Out</Text>
+            </TouchableOpacity>
           </View>
-
-          {/* Sign out */}
-          <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-            <LogOut color="#FF3B30" size={18} />
-            <Text style={styles.signOutText}>Sign Out</Text>
-          </TouchableOpacity>
 
           {/* Delete account */}
           <TouchableOpacity style={styles.deleteAccountButton} onPress={handleDeleteAccount}>
-            <Trash2 color="#FF3B30" size={16} />
+            <Trash2 color="#FF3B30" size={14} />
             <Text style={styles.deleteAccountText}>Delete Account</Text>
           </TouchableOpacity>
+
+          <View style={{ height: 24 }} />
         </ScrollView>
       </SafeAreaView>
 
@@ -429,7 +434,7 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F7F7F7',
   },
   center: {
     justifyContent: 'center',
@@ -437,177 +442,151 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#FFFFFF',
   },
   scrollContent: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F7F7F7',
   },
 
-  // Hero section - dark header
-  heroSection: {
-    backgroundColor: '#1A1A1A',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 28,
+  // Header
+  headerSection: {
+    backgroundColor: '#FFFFFF',
+    paddingBottom: 24,
   },
-  topBar: {
+  headerTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
-  profileRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 12,
-  },
-  avatarContainer: {
-    marginRight: 14,
-  },
-  avatarPlaceholder: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(230, 81, 0, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-  },
-  nameBlock: {
-    flex: 1,
-  },
-  username: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  bio: {
-    fontSize: 13,
-    color: '#999999',
-    marginTop: 2,
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#1A1A1A',
   },
   editBtn: {
     padding: 8,
   },
   editActions: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
   },
   editActionBtn: {
     padding: 8,
   },
+
+  // Avatar
+  avatarSection: {
+    alignItems: 'center',
+    paddingTop: 4,
+  },
+  avatarRing: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    borderWidth: 3,
+    borderColor: '#E65100',
+    padding: 2,
+    marginBottom: 14,
+  },
+  avatar: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 40,
+  },
+  avatarPlaceholder: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 40,
+    backgroundColor: '#FFF3E0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  username: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1A1A1A',
+  },
+  bio: {
+    fontSize: 14,
+    color: '#888888',
+    marginTop: 4,
+    textAlign: 'center',
+    paddingHorizontal: 40,
+  },
   bioSection: {
     marginTop: 12,
+    paddingHorizontal: 20,
   },
   bioInput: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: '#F5F5F5',
     borderRadius: 12,
     padding: 14,
-    color: '#FFFFFF',
+    color: '#1A1A1A',
     fontSize: 14,
     minHeight: 72,
     textAlignVertical: 'top',
-  },
-  streakRow: {
-    flexDirection: 'row',
-    marginTop: 16,
-  },
-  streakBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 107, 0, 0.15)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    gap: 4,
-  },
-  streakText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FF6B00',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
   },
 
-  // Hero stat
-  heroStat: {
+  // Stats strip
+  statsStrip: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-    marginTop: 24,
+    backgroundColor: '#FFFFFF',
+    marginTop: 8,
+    paddingVertical: 20,
   },
-  heroNumber: {
-    fontSize: 64,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    lineHeight: 68,
-    letterSpacing: -2,
-  },
-  heroUnit: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: '#E65100',
-    marginBottom: 8,
-    marginLeft: 4,
-  },
-  heroLabel: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#666666',
-    textAlign: 'center',
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
-    marginTop: 4,
-  },
-
-  // Secondary stats
-  secondaryStats: {
-    flexDirection: 'row',
-    marginTop: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderRadius: 14,
-    paddingVertical: 16,
-  },
-  secondaryStat: {
+  statCell: {
     flex: 1,
     alignItems: 'center',
   },
-  secondaryValue: {
-    fontSize: 17,
+  statNumber: {
+    fontSize: 18,
     fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 4,
+    color: '#1A1A1A',
   },
-  secondaryLabel: {
+  statUnit: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#888888',
+  },
+  statLabel: {
     fontSize: 11,
-    color: '#666666',
+    color: '#888888',
+    marginTop: 4,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  secondaryDivider: {
+  statDivider: {
     width: 1,
     alignSelf: 'stretch',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: '#EEEEEE',
   },
 
-  // This Week section
-  weekSection: {
-    marginHorizontal: 20,
-    marginTop: 20,
-    backgroundColor: '#FAFAFA',
-    borderRadius: 16,
-    padding: 18,
+  // This Week
+  weekCard: {
+    backgroundColor: '#FFFFFF',
+    marginTop: 8,
+    marginHorizontal: 0,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
   },
-  weekHeader: {
+  weekCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
     marginBottom: 16,
+    gap: 8,
   },
-  weekTitle: {
+  weekCardAccent: {
+    width: 4,
+    height: 18,
+    backgroundColor: '#E65100',
+    borderRadius: 2,
+  },
+  weekCardTitle: {
     fontSize: 15,
     fontWeight: '700',
     color: '#1A1A1A',
@@ -620,7 +599,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   weekValue: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
     color: '#E65100',
   },
@@ -633,110 +612,96 @@ const styles = StyleSheet.create({
   },
 
   // Empty state
-  emptyMessage: {
-    fontSize: 14,
-    color: '#666666',
-    textAlign: 'center',
-    marginVertical: 32,
-    fontStyle: 'italic',
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    backgroundColor: '#FFFFFF',
+    marginTop: 8,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#999999',
+    marginTop: 12,
+  },
+  emptySubtext: {
+    fontSize: 13,
+    color: '#BBBBBB',
+    marginTop: 4,
   },
 
   // Activities section
   activitiesSection: {
-    paddingHorizontal: 20,
-    marginTop: 24,
+    marginTop: 8,
   },
   sectionTitle: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '700',
-    color: '#1A1A1A',
-    marginBottom: 14,
+    color: '#888888',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   activityCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    backgroundColor: '#FFFFFF',
+    marginBottom: 1,
+    overflow: 'hidden',
   },
-  activityLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 14,
+  activityAccent: {
+    width: 4,
+    alignSelf: 'stretch',
+    backgroundColor: '#E65100',
   },
-  activityIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(230, 81, 0, 0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  activityDateCol: {
-    alignItems: 'center',
-    width: 32,
-  },
-  activityDay: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#999999',
-    letterSpacing: 0.5,
-  },
-  activityDayNum: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1A1A1A',
-    lineHeight: 22,
-  },
-  activityCenter: {
+  activityBody: {
     flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
   },
-  activityType: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  activityMetrics: {
+  activityHeader: {
     flexDirection: 'row',
-    marginTop: 3,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
   },
-  activityMetricValue: {
-    fontSize: 13,
-    color: '#666666',
-  },
-  activityMetricSep: {
-    fontSize: 13,
-    color: '#CCCCCC',
-  },
-
-  // Sign out
-  signOutButton: {
+  activityTypeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    borderRadius: 12,
-    marginHorizontal: 20,
-    marginTop: 32,
-    marginBottom: 40,
     gap: 8,
   },
-  signOutText: {
-    color: '#FF3B30',
+  activityType: {
     fontSize: 15,
     fontWeight: '600',
+    color: '#1A1A1A',
+  },
+  activityDate: {
+    fontSize: 13,
+    color: '#999999',
+  },
+  activityMetricsRow: {
+    flexDirection: 'row',
+    gap: 24,
+  },
+  activityMetric: {},
+  metricValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A1A1A',
+  },
+  metricLabel: {
+    fontSize: 11,
+    color: '#999999',
+    marginTop: 1,
   },
 
-  // Settings section
+  // Settings
   settingsSection: {
-    marginHorizontal: 20,
-    marginTop: 32,
-    backgroundColor: '#FAFAFA',
+    marginTop: 24,
+    marginHorizontal: 16,
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     overflow: 'hidden',
   },
@@ -752,21 +717,24 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#1A1A1A',
   },
+  settingsDivider: {
+    height: 1,
+    backgroundColor: '#F0F0F0',
+    marginLeft: 46,
+  },
 
   // Delete account
   deleteAccountButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    marginHorizontal: 20,
-    marginBottom: 40,
+    paddingVertical: 16,
     gap: 6,
   },
   deleteAccountText: {
     color: '#FF3B30',
     fontSize: 13,
     fontWeight: '500',
-    opacity: 0.7,
+    opacity: 0.6,
   },
 });
