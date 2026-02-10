@@ -23,25 +23,42 @@ supabase.auth.onAuthStateChange((event, session) => {
     }
 });
 
-// Clear any stale/invalid tokens on startup
+// Clear only definitively invalid sessions on startup.
+// Transient errors (network issues, slow refresh) are NOT treated as invalid —
+// the Supabase auto-refresh mechanism will handle those.
 const clearInvalidSession = async () => {
     try {
-        // Try to get session - if it fails, clear the stored tokens
-        const { error } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabase.auth.getSession();
         if (error) {
-            console.log('Clearing invalid auth session');
-            await supabase.auth.signOut();
-            // Clear all supabase auth keys from AsyncStorage
-            const keys = await AsyncStorage.getAllKeys();
-            const supabaseKeys = keys.filter(k => k.includes('supabase') || k.includes('sb-'));
-            if (supabaseKeys.length > 0) {
-                await AsyncStorage.multiRemove(supabaseKeys);
+            const msg = (error.message || '').toLowerCase();
+            const isUnrecoverable =
+                msg.includes('invalid refresh token') ||
+                msg.includes('refresh token not found') ||
+                msg.includes('refresh token is not valid') ||
+                (error as any).status === 401;
+
+            if (isUnrecoverable) {
+                console.log('Clearing invalid auth session:', error.message);
+                await supabase.auth.signOut();
+                const keys = await AsyncStorage.getAllKeys();
+                const supabaseKeys = keys.filter(k => k.includes('supabase') || k.includes('sb-'));
+                if (supabaseKeys.length > 0) {
+                    await AsyncStorage.multiRemove(supabaseKeys);
+                }
+            } else {
+                // Transient error — let auto-refresh handle it
+                console.log('Session check returned non-fatal error, skipping clear:', error.message);
             }
         }
     } catch (err: any) {
-        // Silently handle - this is just cleanup
-        if (err?.message?.includes('Refresh Token') || err?.name === 'AuthApiError') {
-            console.log('Clearing stale auth tokens');
+        const msg = (err?.message || '').toLowerCase();
+        const isAuthError =
+            msg.includes('invalid refresh token') ||
+            msg.includes('refresh token not found') ||
+            (err?.name === 'AuthApiError' && err?.status === 401);
+
+        if (isAuthError) {
+            console.log('Clearing stale auth tokens:', err?.message);
             try {
                 await supabase.auth.signOut();
                 const keys = await AsyncStorage.getAllKeys();
@@ -52,6 +69,8 @@ const clearInvalidSession = async () => {
             } catch {
                 // Ignore cleanup errors
             }
+        } else {
+            console.log('Session check failed (transient), not clearing:', err?.message);
         }
     }
 };

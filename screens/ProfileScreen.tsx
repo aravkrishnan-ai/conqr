@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, TextInput, Alert, ActionSheetIOS, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { User, Flame, Pencil, Check, X, ChevronRight, MapPin, Clock, Footprints, Bike, PersonStanding, LogOut, Map, TrendingUp, Trash2, Shield } from 'lucide-react-native';
+import { User, Flame, Pencil, Check, X, ChevronRight, MapPin, Clock, Footprints, Bike, PersonStanding, LogOut, Map, TrendingUp, Trash2, Shield, Camera } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import BottomTabBar from '../components/BottomTabBar';
 import { supabase } from '../lib/supabase';
@@ -34,6 +34,7 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editBio, setEditBio] = useState('');
   const [saving, setSaving] = useState(false);
+  const [updatingAvatar, setUpdatingAvatar] = useState(false);
 
   const initialLoadComplete = React.useRef(false);
   const isFetching = React.useRef(false);
@@ -172,6 +173,93 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
     }
   };
 
+  const handleChangeAvatar = async () => {
+    const options = ['Take Photo', 'Choose from Library', 'Cancel'];
+    const cancelIndex = 2;
+
+    const handleSelection = async (index: number) => {
+      if (index === cancelIndex) return;
+
+      setUpdatingAvatar(true);
+      try {
+        const ImagePicker = await import('expo-image-picker');
+
+        if (index === 0) {
+          // Take photo
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert('Permission Required', 'Camera access is needed to take a profile photo.');
+            setUpdatingAvatar(false);
+            return;
+          }
+
+          const result = await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.5,
+            base64: true,
+          });
+
+          if (!result.canceled && result.assets?.[0]?.base64) {
+            const base64Uri = `data:image/jpeg;base64,${result.assets[0].base64}`;
+            await saveAvatar(base64Uri);
+          }
+        } else if (index === 1) {
+          // Choose from library
+          const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert('Permission Required', 'Photo library access is needed to choose a profile picture.');
+            setUpdatingAvatar(false);
+            return;
+          }
+
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.5,
+            base64: true,
+          });
+
+          if (!result.canceled && result.assets?.[0]?.base64) {
+            const base64Uri = `data:image/jpeg;base64,${result.assets[0].base64}`;
+            await saveAvatar(base64Uri);
+          }
+        }
+      } catch (err: any) {
+        console.error('Image picker error:', err);
+        Alert.alert('Not Available', 'Photo picker is not available. Please update the app to use this feature.');
+      } finally {
+        setUpdatingAvatar(false);
+      }
+    };
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options, cancelButtonIndex: cancelIndex },
+        handleSelection
+      );
+    } else {
+      // Android: use Alert as action sheet
+      Alert.alert('Change Profile Picture', 'Choose an option', [
+        { text: 'Take Photo', onPress: () => handleSelection(0) },
+        { text: 'Choose from Library', onPress: () => handleSelection(1) },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  };
+
+  const saveAvatar = async (avatarUri: string) => {
+    try {
+      await AuthService.updateProfile({
+        avatarUrl: avatarUri,
+      });
+      setProfile(prev => prev ? { ...prev, avatarUrl: avatarUri } : prev);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to update profile picture');
+    }
+  };
+
   const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'friends' | 'leaderboard' | 'feed') => {
     if (tab === 'home') {
       navigation.navigate('Home');
@@ -268,17 +356,31 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
               )}
             </View>
 
-            {/* Centered avatar */}
+            {/* Centered avatar with camera overlay */}
             <View style={styles.avatarSection}>
-              <View style={styles.avatarRing}>
-                {profile?.avatarUrl ? (
-                  <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
-                ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <User color="#E65100" size={36} />
-                  </View>
-                )}
-              </View>
+              <TouchableOpacity
+                style={styles.avatarTouchable}
+                onPress={handleChangeAvatar}
+                disabled={updatingAvatar}
+                activeOpacity={0.8}
+              >
+                <View style={styles.avatarRing}>
+                  {updatingAvatar ? (
+                    <View style={styles.avatarPlaceholder}>
+                      <ActivityIndicator color="#E65100" size="small" />
+                    </View>
+                  ) : profile?.avatarUrl ? (
+                    <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
+                  ) : (
+                    <View style={styles.avatarPlaceholder}>
+                      <User color="#E65100" size={36} />
+                    </View>
+                  )}
+                </View>
+                <View style={styles.cameraOverlay}>
+                  <Camera color="#FFFFFF" size={14} />
+                </View>
+              </TouchableOpacity>
               <Text style={styles.username}>{profile?.username || 'your_username'}</Text>
               {profile?.bio && !isEditing ? (
                 <Text style={styles.bio} numberOfLines={2}>{profile.bio}</Text>
@@ -482,6 +584,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 4,
   },
+  avatarTouchable: {
+    position: 'relative',
+    marginBottom: 14,
+  },
   avatarRing: {
     width: 84,
     height: 84,
@@ -489,7 +595,6 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: '#E65100',
     padding: 2,
-    marginBottom: 14,
   },
   avatar: {
     width: '100%',
@@ -503,6 +608,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF3E0',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  cameraOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#E65100',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
   username: {
     fontSize: 22,

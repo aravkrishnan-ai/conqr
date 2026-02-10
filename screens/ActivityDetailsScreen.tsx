@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { ArrowLeft, MapPin, Clock, Zap, Mountain, Map, ChevronRight, Share2 } from 'lucide-react-native';
 import { Activity, Territory, GPSPoint } from '../lib/types';
 import { ActivityService } from '../services/ActivityService';
+import { getDistance } from 'geolib';
 import { TerritoryService } from '../services/TerritoryService';
 import { supabase } from '../lib/supabase';
 import MapContainer, { MapContainerHandle } from '../components/MapContainer';
@@ -98,41 +99,58 @@ export default function ActivityDetailsScreen({ navigation, route }: ActivityDet
   };
 
   // Calculate incline/elevation gain from GPS points
+  // Uses smoothing and threshold filtering to handle GPS altitude noise
   const calculateElevation = (polylines: GPSPoint[][]): { gain: number; loss: number; avgIncline: number } => {
     let totalGain = 0;
     let totalLoss = 0;
     let totalDistance = 0;
+    const ALTITUDE_THRESHOLD_M = 2;
+    const SMOOTHING_WINDOW = 5;
 
     for (const segment of polylines) {
-      let prevAltitude: number | null = null;
-      let prevPoint: GPSPoint | null = null;
-
+      const altPoints: { altitude: number; lat: number; lng: number }[] = [];
       for (const point of segment) {
-        if (point.altitude !== null && point.altitude !== undefined) {
-          if (prevAltitude !== null) {
-            const diff = point.altitude - prevAltitude;
-            if (diff > 0) {
-              totalGain += diff;
-            } else {
-              totalLoss += Math.abs(diff);
-            }
-          }
-          prevAltitude = point.altitude;
+        if (point.altitude !== null && point.altitude !== undefined && !isNaN(point.altitude)) {
+          altPoints.push({ altitude: point.altitude, lat: point.lat, lng: point.lng });
         }
+      }
+      if (altPoints.length < 2) continue;
 
-        if (prevPoint) {
-          // Approximate distance for incline calculation
-          const latDiff = point.lat - prevPoint.lat;
-          const lngDiff = point.lng - prevPoint.lng;
-          totalDistance += Math.sqrt(latDiff * latDiff + lngDiff * lngDiff) * 111000; // rough meters
+      // Smooth altitudes with moving average to reduce GPS noise
+      const smoothed: number[] = [];
+      for (let i = 0; i < altPoints.length; i++) {
+        const start = Math.max(0, i - Math.floor(SMOOTHING_WINDOW / 2));
+        const end = Math.min(altPoints.length, i + Math.floor(SMOOTHING_WINDOW / 2) + 1);
+        let sum = 0;
+        for (let j = start; j < end; j++) sum += altPoints[j].altitude;
+        smoothed.push(sum / (end - start));
+      }
+
+      // Accumulate gain/loss only when change exceeds threshold
+      let lastSignificant = smoothed[0];
+      for (let i = 1; i < smoothed.length; i++) {
+        const diff = smoothed[i] - lastSignificant;
+        if (Math.abs(diff) >= ALTITUDE_THRESHOLD_M) {
+          if (diff > 0) totalGain += diff;
+          else totalLoss += Math.abs(diff);
+          lastSignificant = smoothed[i];
         }
-        prevPoint = point;
+      }
+
+      // Use proper geodesic distance calculation
+      for (let i = 1; i < altPoints.length; i++) {
+        try {
+          const d = getDistance(
+            { latitude: altPoints[i - 1].lat, longitude: altPoints[i - 1].lng },
+            { latitude: altPoints[i].lat, longitude: altPoints[i].lng }
+          );
+          if (d > 0 && d < 1000) totalDistance += d;
+        } catch {}
       }
     }
 
-    // Calculate average incline percentage
-    const avgIncline = totalDistance > 0 ? ((totalGain - totalLoss) / totalDistance) * 100 : 0;
-
+    // Average incline as total climb over total horizontal distance
+    const avgIncline = totalDistance > 0 ? (totalGain / totalDistance) * 100 : 0;
     return { gain: totalGain, loss: totalLoss, avgIncline };
   };
 
@@ -180,15 +198,15 @@ export default function ActivityDetailsScreen({ navigation, route }: ActivityDet
     });
   };
 
-  // Get incline level label
+  // Get incline level label based on smoothed/filtered elevation data
   const getInclineLevel = (avgIncline: number, gain: number): { label: string; color: string } => {
-    if (gain < 5) {
+    if (gain < 10) {
       return { label: 'Flat', color: '#4CAF50' };
-    } else if (avgIncline < 2 && gain < 20) {
+    } else if (gain < 30) {
       return { label: 'Easy', color: '#8BC34A' };
-    } else if (avgIncline < 5 && gain < 50) {
+    } else if (gain < 75) {
       return { label: 'Moderate', color: '#FFC107' };
-    } else if (avgIncline < 10 && gain < 100) {
+    } else if (gain < 150) {
       return { label: 'Challenging', color: '#FF9800' };
     } else {
       return { label: 'Steep', color: '#F44336' };

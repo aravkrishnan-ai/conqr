@@ -7,14 +7,13 @@ import MapContainer, { MapContainerHandle } from '../components/MapContainer';
 import BottomTabBar from '../components/BottomTabBar';
 import { LocationService } from '../services/LocationService';
 import { GameEngine } from '../services/GameEngine';
-import { WakeLockService } from '../services/WakeLockService';
 import { TerritoryService } from '../services/TerritoryService';
 import { ActivityService } from '../services/ActivityService';
 import { AuthService } from '../services/AuthService';
+import { TrackingStore } from '../services/TrackingStore';
 import { GPSPoint, ActivityType, Territory, Activity, ConquerResult } from '../lib/types';
 import SharePreviewModal from '../components/SharePreviewModal';
 import { supabase } from '../lib/supabase';
-import { getDistance } from 'geolib';
 import { v4 as uuidv4 } from 'uuid';
 import { useScreenTracking } from '../lib/useScreenTracking';
 import { AnalyticsService } from '../services/AnalyticsService';
@@ -25,17 +24,23 @@ interface RecordScreenProps {
 
 export default function RecordScreen({ navigation }: RecordScreenProps) {
   useScreenTracking('Record');
+
+  // Map display state (local to this component)
   const [location, setLocation] = React.useState<GPSPoint | null>(null);
-  const [path, setPath] = React.useState<GPSPoint[]>([]);
-  const [isTracking, setIsTracking] = React.useState(false);
-  const [showActivityPicker, setShowActivityPicker] = React.useState(false);
-  const [activityType, setActivityType] = React.useState<ActivityType | null>(null);
   const [locationError, setLocationError] = React.useState<string | null>(null);
   const [savedTerritories, setSavedTerritories] = React.useState<Territory[]>([]);
-  const [trackingStartTime, setTrackingStartTime] = React.useState<number | null>(null);
-  const [currentDistance, setCurrentDistance] = React.useState(0);
+
+  // Tracking state — synced from TrackingStore (persists across navigation)
+  const [path, setPath] = React.useState<GPSPoint[]>(TrackingStore.path);
+  const [isTracking, setIsTracking] = React.useState(TrackingStore.isTracking);
+  const [activityType, setActivityType] = React.useState<ActivityType | null>(TrackingStore.activityType);
+  const [trackingStartTime, setTrackingStartTime] = React.useState<number | null>(TrackingStore.startTime);
+  const [currentDistance, setCurrentDistance] = React.useState(TrackingStore.runningDistance);
+
+  // Local UI state
   const [elapsedTime, setElapsedTime] = React.useState(0);
   const [currentSpeed, setCurrentSpeed] = React.useState(0);
+  const [showActivityPicker, setShowActivityPicker] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
   const [showShareModal, setShowShareModal] = React.useState(false);
   const [completedActivity, setCompletedActivity] = React.useState<Activity | null>(null);
@@ -52,23 +57,9 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
   }>({ visible: false, title: '', distance: '', duration: '', pace: '' });
 
   const mapRef = React.useRef<MapContainerHandle>(null);
-  const isTrackingRef = React.useRef(false);
-  const pathRef = React.useRef<GPSPoint[]>([]);
-  const activityTypeRef = React.useRef<ActivityType | null>(null);
-  const startTimeRef = React.useRef<number | null>(null);
   const timerRef = React.useRef<NodeJS.Timeout | null>(null);
-  const runningDistanceRef = React.useRef(0);
-  const recentPositionsRef = React.useRef<{ lat: number; lng: number; time: number }[]>([]);
 
-  const STILLNESS_WINDOW_MS = 3000;
-  const STILLNESS_THRESHOLD_M = 3;
-  const MIN_POINT_DISTANCE_M = 2;
-
-  isTrackingRef.current = isTracking;
-  pathRef.current = path;
-  activityTypeRef.current = activityType;
-  startTimeRef.current = trackingStartTime;
-
+  // Load territories on mount
   React.useEffect(() => {
     const loadTerritories = async () => {
       try {
@@ -84,6 +75,27 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
     loadTerritories();
   }, []);
 
+  // Subscribe to TrackingStore for persistent tracking state
+  React.useEffect(() => {
+    const syncFromStore = () => {
+      setIsTracking(TrackingStore.isTracking);
+      setPath(TrackingStore.path);
+      setCurrentDistance(TrackingStore.runningDistance);
+      setActivityType(TrackingStore.activityType);
+      setTrackingStartTime(TrackingStore.startTime);
+    };
+
+    // Sync initial state (handles returning to screen during active tracking)
+    syncFromStore();
+    if (TrackingStore.isTracking && TrackingStore.startTime) {
+      setElapsedTime(Math.floor((Date.now() - TrackingStore.startTime) / 1000));
+    }
+
+    const unsubscribe = TrackingStore.subscribe(syncFromStore);
+    return unsubscribe;
+  }, []);
+
+  // Location subscription for map display only (separate from tracking)
   React.useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     let mounted = true;
@@ -95,74 +107,6 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
             if (!mounted) return;
             setLocationError(null);
             setLocation(point);
-
-            if (!isTrackingRef.current) return;
-
-            const MAX_ACCURACY_METERS = 50;
-            if (point.accuracy !== null && point.accuracy > MAX_ACCURACY_METERS) return;
-
-            if (activityTypeRef.current && point.speed !== null) {
-              GameEngine.validateSpeed(point, activityTypeRef.current);
-            }
-
-            const now = Date.now();
-            const currentPos = { lat: point.lat, lng: point.lng, time: now };
-
-            recentPositionsRef.current.push(currentPos);
-            recentPositionsRef.current = recentPositionsRef.current.filter(
-              p => now - p.time < STILLNESS_WINDOW_MS
-            );
-
-            if (point.speed !== null && point.speed >= 0.8) {
-              // Moving
-            } else if (recentPositionsRef.current.length > 1) {
-              const oldest = recentPositionsRef.current[0];
-              let maxDisplacement = 0;
-              for (const pos of recentPositionsRef.current) {
-                try {
-                  const d = getDistance(
-                    { latitude: oldest.lat, longitude: oldest.lng },
-                    { latitude: pos.lat, longitude: pos.lng }
-                  );
-                  if (d > maxDisplacement) maxDisplacement = d;
-                } catch { /* ignore */ }
-              }
-
-              if (maxDisplacement < STILLNESS_THRESHOLD_M) {
-                if (point.speed === null || point.speed < 0.3) return;
-              }
-            }
-
-            setPath(prev => {
-              if (prev.length > 0) {
-                const last = prev[prev.length - 1];
-                try {
-                  const d = getDistance(
-                    { latitude: last.lat, longitude: last.lng },
-                    { latitude: point.lat, longitude: point.lng }
-                  );
-                  if (d < MIN_POINT_DISTANCE_M) return prev;
-                } catch { /* add point on error */ }
-              }
-
-              const newPath = [...prev, point];
-
-              try {
-                if (prev.length > 0) {
-                  const lastPoint = prev[prev.length - 1];
-                  const segDist = getDistance(
-                    { latitude: lastPoint.lat, longitude: lastPoint.lng },
-                    { latitude: point.lat, longitude: point.lng }
-                  );
-                  if (segDist > 0 && segDist < 1000) {
-                    runningDistanceRef.current += segDist;
-                  }
-                }
-                setCurrentDistance(runningDistanceRef.current);
-              } catch { /* ignore */ }
-
-              return newPath;
-            });
           },
           (error) => {
             if (!mounted) return;
@@ -179,18 +123,11 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
     return () => {
       mounted = false;
       if (unsubscribe) unsubscribe();
-      WakeLockService.release();
+      // Do NOT release WakeLock or stop tracking here — TrackingStore manages that
     };
   }, []);
 
-  React.useEffect(() => {
-    if (isTracking) {
-      WakeLockService.request().catch(() => {});
-    } else {
-      WakeLockService.release().catch(() => {});
-    }
-  }, [isTracking]);
-
+  // Timer for elapsed time and speed (recomputed locally)
   React.useEffect(() => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -202,7 +139,8 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
         const elapsed = Math.floor((Date.now() - trackingStartTime) / 1000);
         setElapsedTime(elapsed);
 
-        const recentPath = pathRef.current.slice(-5);
+        const storePath = TrackingStore.path;
+        const recentPath = storePath.slice(-5);
         if (recentPath.length >= 2) {
           const recentSpeeds = recentPath
             .map(p => p.speed)
@@ -234,13 +172,13 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
     if (isSaving) return;
 
     if (isTracking) {
-      isTrackingRef.current = false;
-      setIsTracking(false);
+      // Stop tracking — get final accumulated state from the store
       setIsSaving(true);
+      const trackingResult = TrackingStore.stop();
 
-      const currentPath = [...pathRef.current];
-      const currentActivityType = activityTypeRef.current;
-      const startTime = startTimeRef.current || Date.now();
+      const currentPath = trackingResult.path;
+      const currentActivityType = trackingResult.activityType;
+      const startTime = trackingResult.startTime || Date.now();
       const endTime = Date.now();
 
       const SAVE_TIMEOUT_MS = 20000;
@@ -333,7 +271,7 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
 
         AnalyticsService.trackEvent('activity_saved');
         AnalyticsService.trackEvent('activity_completed', {
-          activityType: activityType,
+          activityType: currentActivityType,
           distance,
           duration,
           loopClosed: !!savedTerritory,
@@ -385,24 +323,15 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
   };
 
   const resetTrackingState = () => {
-    setPath([]);
-    pathRef.current = [];
-    runningDistanceRef.current = 0;
-    recentPositionsRef.current = [];
-    setActivityType(null);
-    setTrackingStartTime(null);
-    setCurrentDistance(0);
     setElapsedTime(0);
     setCurrentSpeed(0);
   };
 
-  const startTracking = (type: ActivityType) => {
-    resetTrackingState();
-    setActivityType(type);
-    setTrackingStartTime(Date.now());
+  const startTracking = async (type: ActivityType) => {
     setShowActivityPicker(false);
-    isTrackingRef.current = true;
-    setIsTracking(true);
+    setElapsedTime(0);
+    setCurrentSpeed(0);
+    await TrackingStore.start(type);
     AnalyticsService.trackEvent('activity_started', { activityType: type });
   };
 
@@ -443,7 +372,7 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.content}>
           <Text style={styles.mapsLabel}>maps</Text>
-          
+
           <View style={styles.mapContainer}>
             <MapContainer
               ref={mapRef}
@@ -490,7 +419,7 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
           </View>
         </View>
       </SafeAreaView>
-      
+
       <BottomTabBar activeTab="record" onTabPress={handleTabPress} />
 
       <Modal

@@ -1,24 +1,34 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   ActivityIndicator, Image, TextInput, RefreshControl,
-  Modal, Alert, KeyboardAvoidingView, Platform, Share
+  Modal, Alert, KeyboardAvoidingView, Platform, Share, Dimensions
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import {
   Newspaper, Plus, User, Heart, MessageCircle, Share2,
-  X, Send, MapPin, Clock, Map, Trash2, Activity
+  X, Send, MapPin, Clock, Map, Trash2, Activity,
+  Footprints, Bike, PersonStanding
 } from 'lucide-react-native';
+import Svg, { Polyline as SvgPolyline, Circle, Polygon as SvgPolygon } from 'react-native-svg';
 import { useFocusEffect } from '@react-navigation/native';
 import BottomTabBar from '../components/BottomTabBar';
 import { FeedService } from '../services/FeedService';
 import { ActivityService } from '../services/ActivityService';
 import { TerritoryService } from '../services/TerritoryService';
 import { supabase } from '../lib/supabase';
-import { Post, PostComment, PostType, Activity as ActivityType, Territory } from '../lib/types';
+import { Post, PostComment, PostType, Activity as ActivityType, Territory, GPSPoint } from '../lib/types';
 import { useScreenTracking } from '../lib/useScreenTracking';
 import { AnalyticsService } from '../services/AnalyticsService';
+import {
+  gpsPointsToSvgPath, territoryPolygonToSvg, flattenPolylines,
+  formatDistance, formatDuration, formatPace, formatArea,
+} from '../utils/shareCardUtils';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const CARD_MAP_WIDTH = SCREEN_WIDTH - 72; // 20px list padding * 2 + 16px card padding * 2
+const CARD_MAP_HEIGHT = 180;
 
 interface FeedScreenProps {
   navigation: any;
@@ -234,14 +244,22 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
     return new Date(timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  const formatDistance = (meters: number): string => {
-    if (meters < 1000) return `${Math.round(meters)}m`;
-    return `${(meters / 1000).toFixed(2)}km`;
+  const getActivityTypeLabel = (type: string): string => {
+    switch (type?.toUpperCase()) {
+      case 'RUN': return 'Run';
+      case 'RIDE': return 'Ride';
+      case 'WALK': return 'Walk';
+      default: return 'Activity';
+    }
   };
 
-  const formatArea = (sqMeters: number): string => {
-    if (sqMeters < 10000) return `${Math.round(sqMeters)} m²`;
-    return `${(sqMeters / 10000).toFixed(2)} ha`;
+  const getActivityTypeIcon = (type: string) => {
+    switch (type?.toUpperCase()) {
+      case 'RUN': return <Footprints color="#FFFFFF" size={14} />;
+      case 'RIDE': return <Bike color="#FFFFFF" size={14} />;
+      case 'WALK': return <PersonStanding color="#FFFFFF" size={14} />;
+      default: return <Activity color="#FFFFFF" size={14} />;
+    }
   };
 
   const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'friends' | 'leaderboard' | 'feed') => {
@@ -262,8 +280,160 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
     setShowCreateModal(true);
   };
 
+  // Render inline SVG route map for activity posts
+  const renderActivityMap = (activity: ActivityType) => {
+    const flatPath = flattenPolylines(activity.polylines || []);
+    if (flatPath.length < 2) return null;
+
+    const svgData = gpsPointsToSvgPath(flatPath, CARD_MAP_WIDTH, CARD_MAP_HEIGHT);
+    const pace = formatPace(activity.averageSpeed || 0);
+
+    return (
+      <TouchableOpacity
+        style={styles.activityMapCard}
+        onPress={() => navigation.navigate('ActivityDetails', { activityId: activity.id })}
+        activeOpacity={0.8}
+      >
+        {/* Route visualization */}
+        <View style={styles.mapContainer}>
+          <Svg
+            width={CARD_MAP_WIDTH}
+            height={CARD_MAP_HEIGHT}
+            viewBox={`0 0 ${CARD_MAP_WIDTH} ${CARD_MAP_HEIGHT}`}
+          >
+            {/* Glow layer */}
+            <SvgPolyline
+              points={svgData.points}
+              fill="none"
+              stroke="rgba(230, 81, 0, 0.3)"
+              strokeWidth={8}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {/* Main route */}
+            <SvgPolyline
+              points={svgData.points}
+              fill="none"
+              stroke="#FFFFFF"
+              strokeWidth={2.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {/* Start marker */}
+            <Circle
+              cx={svgData.startPoint.x}
+              cy={svgData.startPoint.y}
+              r={5}
+              fill="#00D26A"
+            />
+            {/* End marker */}
+            <Circle
+              cx={svgData.endPoint.x}
+              cy={svgData.endPoint.y}
+              r={5}
+              fill="#E65100"
+            />
+          </Svg>
+        </View>
+
+        {/* Stats row */}
+        <View style={styles.activityStatsRow}>
+          <View style={styles.activityTypeBadge}>
+            {getActivityTypeIcon(activity.type)}
+            <Text style={styles.activityTypeBadgeText}>{getActivityTypeLabel(activity.type)}</Text>
+          </View>
+          <View style={styles.activityStatsGroup}>
+            <View style={styles.activityStat}>
+              <Text style={styles.activityStatValue}>{formatDistance(activity.distance)}</Text>
+              <Text style={styles.activityStatLabel}>Distance</Text>
+            </View>
+            <View style={styles.activityStatDivider} />
+            <View style={styles.activityStat}>
+              <Text style={styles.activityStatValue}>{formatDuration(activity.duration)}</Text>
+              <Text style={styles.activityStatLabel}>Time</Text>
+            </View>
+            <View style={styles.activityStatDivider} />
+            <View style={styles.activityStat}>
+              <Text style={styles.activityStatValue}>{pace}</Text>
+              <Text style={styles.activityStatLabel}>Pace</Text>
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  // Render inline SVG territory polygon for territory posts
+  const renderTerritoryMap = (territory: Territory) => {
+    if (!territory.polygon || territory.polygon.length < 3) return null;
+
+    const svgData = territoryPolygonToSvg(territory.polygon, CARD_MAP_WIDTH, CARD_MAP_HEIGHT);
+
+    return (
+      <TouchableOpacity
+        style={styles.activityMapCard}
+        onPress={() => {
+          navigation.navigate('Home', {
+            focusTerritoryLat: territory.center.lat,
+            focusTerritoryLng: territory.center.lng,
+          });
+        }}
+        activeOpacity={0.8}
+      >
+        {/* Territory polygon visualization */}
+        <View style={styles.mapContainer}>
+          <Svg
+            width={CARD_MAP_WIDTH}
+            height={CARD_MAP_HEIGHT}
+            viewBox={`0 0 ${CARD_MAP_WIDTH} ${CARD_MAP_HEIGHT}`}
+          >
+            {/* Glow fill */}
+            <SvgPolygon
+              points={svgData.points}
+              fill="rgba(230, 81, 0, 0.2)"
+              stroke="rgba(230, 81, 0, 0.4)"
+              strokeWidth={6}
+              strokeLinejoin="round"
+            />
+            {/* Border */}
+            <SvgPolygon
+              points={svgData.points}
+              fill="rgba(230, 81, 0, 0.15)"
+              stroke="#E65100"
+              strokeWidth={2}
+              strokeLinejoin="round"
+            />
+          </Svg>
+        </View>
+
+        {/* Territory info */}
+        <View style={styles.activityStatsRow}>
+          <View style={[styles.activityTypeBadge, styles.territoryBadge]}>
+            <Map color="#FFFFFF" size={14} />
+            <Text style={styles.activityTypeBadgeText}>Territory</Text>
+          </View>
+          <View style={styles.activityStatsGroup}>
+            <View style={styles.activityStat}>
+              <Text style={styles.activityStatValue} numberOfLines={1}>
+                {territory.name || 'Unnamed'}
+              </Text>
+              <Text style={styles.activityStatLabel}>Name</Text>
+            </View>
+            <View style={styles.activityStatDivider} />
+            <View style={styles.activityStat}>
+              <Text style={styles.activityStatValue}>{formatArea(territory.area)}</Text>
+              <Text style={styles.activityStatLabel}>Area</Text>
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   const renderPostCard = ({ item }: { item: Post }) => {
     const isOwner = item.userId === currentUserId;
+    const hasActivityMap = item.postType === 'activity_share' && item.activity;
+    const hasTerritoryMap = item.postType === 'territory_share' && item.territory;
 
     return (
       <View style={styles.postCard}>
@@ -288,7 +458,11 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
             </View>
             <View>
               <Text style={styles.postUsername}>{item.username}</Text>
-              <Text style={styles.postTime}>{formatTimeAgo(item.createdAt)}</Text>
+              <Text style={styles.postTime}>
+                {formatTimeAgo(item.createdAt)}
+                {hasActivityMap && ` \u00B7 ${getActivityTypeLabel(item.activity!.type)}`}
+                {hasTerritoryMap && ' \u00B7 Territory'}
+              </Text>
             </View>
           </TouchableOpacity>
           {isOwner && (
@@ -298,9 +472,14 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
           )}
         </View>
 
-        <Text style={styles.postContent}>{item.content}</Text>
+        {/* Strava-like activity map card */}
+        {hasActivityMap && renderActivityMap(item.activity!)}
 
-        {item.postType === 'activity_share' && item.activityId && (
+        {/* Strava-like territory map card */}
+        {hasTerritoryMap && renderTerritoryMap(item.territory!)}
+
+        {/* Fallback attachment card for posts without loaded data */}
+        {item.postType === 'activity_share' && item.activityId && !item.activity && (
           <TouchableOpacity
             style={styles.attachmentCard}
             onPress={() => navigation.navigate('ActivityDetails', { activityId: item.activityId })}
@@ -316,7 +495,7 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
           </TouchableOpacity>
         )}
 
-        {item.postType === 'territory_share' && item.territoryId && (
+        {item.postType === 'territory_share' && item.territoryId && !item.territory && (
           <TouchableOpacity
             style={styles.attachmentCard}
             onPress={async () => {
@@ -345,6 +524,10 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
             </View>
           </TouchableOpacity>
         )}
+
+        {item.content ? (
+          <Text style={styles.postContent}>{item.content}</Text>
+        ) : null}
 
         <View style={styles.postActions}>
           <TouchableOpacity
@@ -706,7 +889,72 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
-  // Attachment card
+  // Strava-like activity map card
+  activityMapCard: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  mapContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  activityStatsRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  activityTypeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#E65100',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    gap: 4,
+    marginBottom: 8,
+  },
+  territoryBadge: {
+    backgroundColor: '#2E7D32',
+  },
+  activityTypeBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  activityStatsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  activityStat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  activityStatValue: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  activityStatLabel: {
+    color: '#888888',
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    marginTop: 2,
+    textTransform: 'uppercase',
+  },
+  activityStatDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+
+  // Fallback attachment card
   attachmentCard: {
     flexDirection: 'row',
     alignItems: 'center',

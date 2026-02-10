@@ -38,9 +38,7 @@
         "FOREGROUND_SERVICE_LOCATION"
       ],
       "blockedPermissions": [
-        "android.permission.SYSTEM_ALERT_WINDOW",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
+        "android.permission.SYSTEM_ALERT_WINDOW"
       ],
       "intentFilters": [
         {
@@ -62,6 +60,13 @@
     },
     "plugins": [
       "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Conqr needs access to your photos to set your profile picture.",
+          "cameraPermission": "Conqr needs access to your camera to take a profile picture."
+        }
+      ],
       [
         "expo-location",
         {

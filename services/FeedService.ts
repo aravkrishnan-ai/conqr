@@ -1,7 +1,55 @@
 import { supabase } from '../lib/supabase';
-import { Post, PostComment, PostType } from '../lib/types';
+import { Post, PostComment, PostType, Activity, Territory, GPSPoint } from '../lib/types';
 
-const mapPost = (row: any, currentUserId: string | null, likeRows: any[], commentCounts: Map<string, number>): Post => ({
+const parsePolylines = (polylines: any): GPSPoint[][] => {
+    if (!polylines) return [];
+    if (Array.isArray(polylines)) return polylines;
+    if (typeof polylines === 'string') {
+        try {
+            const parsed = JSON.parse(polylines);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch {
+            return [];
+        }
+    }
+    return [];
+};
+
+const mapActivity = (a: any): Activity => ({
+    id: a.id,
+    userId: a.user_id,
+    type: a.type || 'WALK',
+    startTime: new Date(a.start_time).getTime(),
+    endTime: a.end_time ? new Date(a.end_time).getTime() : undefined,
+    distance: a.distance || 0,
+    duration: a.duration || 0,
+    polylines: parsePolylines(a.polylines),
+    isSynced: true,
+    territoryId: a.territory_id || undefined,
+    averageSpeed: a.average_speed || undefined,
+});
+
+const mapTerritory = (t: any): Territory => ({
+    id: t.id,
+    name: t.name || '',
+    ownerId: t.owner_id,
+    activityId: t.activity_id,
+    claimedAt: new Date(t.claimed_at).getTime(),
+    area: t.area || 0,
+    perimeter: t.perimeter || 0,
+    center: t.center || { lat: 0, lng: 0 },
+    polygon: t.polygon || [],
+    history: t.history || [],
+});
+
+const mapPost = (
+    row: any,
+    currentUserId: string | null,
+    likeRows: any[],
+    commentCounts: Map<string, number>,
+    activitiesMap: Map<string, Activity>,
+    territoriesMap: Map<string, Territory>,
+): Post => ({
     id: row.id,
     userId: row.user_id,
     username: row.user?.username || 'Unknown',
@@ -10,6 +58,8 @@ const mapPost = (row: any, currentUserId: string | null, likeRows: any[], commen
     postType: row.post_type as PostType,
     activityId: row.activity_id || undefined,
     territoryId: row.territory_id || undefined,
+    activity: row.activity_id ? activitiesMap.get(row.activity_id) : undefined,
+    territory: row.territory_id ? territoriesMap.get(row.territory_id) : undefined,
     likeCount: likeRows.filter((l: any) => l.post_id === row.id).length,
     commentCount: commentCounts.get(row.id) || 0,
     isLikedByMe: currentUserId ? likeRows.some((l: any) => l.post_id === row.id && l.user_id === currentUserId) : false,
@@ -25,6 +75,59 @@ const mapComment = (row: any): PostComment => ({
     content: row.content,
     createdAt: new Date(row.created_at).getTime(),
 });
+
+async function fetchLinkedData(posts: any[]): Promise<{
+    activitiesMap: Map<string, Activity>;
+    territoriesMap: Map<string, Territory>;
+}> {
+    const activityIds = posts
+        .filter((p: any) => p.post_type === 'activity_share' && p.activity_id)
+        .map((p: any) => p.activity_id);
+
+    const territoryIds = posts
+        .filter((p: any) => p.post_type === 'territory_share' && p.territory_id)
+        .map((p: any) => p.territory_id);
+
+    const activitiesMap = new Map<string, Activity>();
+    const territoriesMap = new Map<string, Territory>();
+
+    const promises: Promise<void>[] = [];
+
+    if (activityIds.length > 0) {
+        promises.push(
+            (async () => {
+                const { data } = await supabase
+                    .from('activities')
+                    .select('*')
+                    .in('id', activityIds);
+                if (data) {
+                    for (const a of data) {
+                        activitiesMap.set(a.id, mapActivity(a));
+                    }
+                }
+            })()
+        );
+    }
+
+    if (territoryIds.length > 0) {
+        promises.push(
+            (async () => {
+                const { data } = await supabase
+                    .from('territories')
+                    .select('*')
+                    .in('id', territoryIds);
+                if (data) {
+                    for (const t of data) {
+                        territoriesMap.set(t.id, mapTerritory(t));
+                    }
+                }
+            })()
+        );
+    }
+
+    await Promise.all(promises);
+    return { activitiesMap, territoriesMap };
+}
 
 export const FeedService = {
     async getFeed(limit: number = 50, offset: number = 0): Promise<Post[]> {
@@ -51,26 +154,31 @@ export const FeedService = {
 
             const postIds = posts.map((p: any) => p.id);
 
-            // Fetch likes for all posts in batch
-            const { data: likes } = await supabase
-                .from('post_likes')
-                .select('post_id, user_id')
-                .in('post_id', postIds);
+            // Fetch likes, comments, and linked data in parallel
+            const [likesResult, commentsResult, linkedData] = await Promise.all([
+                supabase
+                    .from('post_likes')
+                    .select('post_id, user_id')
+                    .in('post_id', postIds),
+                supabase
+                    .from('post_comments')
+                    .select('post_id')
+                    .in('post_id', postIds),
+                fetchLinkedData(posts),
+            ]);
 
-            // Fetch comment counts in batch
-            const { data: comments } = await supabase
-                .from('post_comments')
-                .select('post_id')
-                .in('post_id', postIds);
+            const likes = likesResult.data || [];
 
             const commentCounts = new Map<string, number>();
-            if (comments) {
-                for (const c of comments) {
+            if (commentsResult.data) {
+                for (const c of commentsResult.data) {
                     commentCounts.set(c.post_id, (commentCounts.get(c.post_id) || 0) + 1);
                 }
             }
 
-            return posts.map((row: any) => mapPost(row, currentUserId, likes || [], commentCounts));
+            return posts.map((row: any) =>
+                mapPost(row, currentUserId, likes, commentCounts, linkedData.activitiesMap, linkedData.territoriesMap)
+            );
         } catch (err) {
             console.error('Failed to fetch feed:', err);
             return [];
@@ -259,24 +367,30 @@ export const FeedService = {
 
             const postIds = posts.map((p: any) => p.id);
 
-            const { data: likes } = await supabase
-                .from('post_likes')
-                .select('post_id, user_id')
-                .in('post_id', postIds);
+            const [likesResult, commentsResult, linkedData] = await Promise.all([
+                supabase
+                    .from('post_likes')
+                    .select('post_id, user_id')
+                    .in('post_id', postIds),
+                supabase
+                    .from('post_comments')
+                    .select('post_id')
+                    .in('post_id', postIds),
+                fetchLinkedData(posts),
+            ]);
 
-            const { data: comments } = await supabase
-                .from('post_comments')
-                .select('post_id')
-                .in('post_id', postIds);
+            const likes = likesResult.data || [];
 
             const commentCounts = new Map<string, number>();
-            if (comments) {
-                for (const c of comments) {
+            if (commentsResult.data) {
+                for (const c of commentsResult.data) {
                     commentCounts.set(c.post_id, (commentCounts.get(c.post_id) || 0) + 1);
                 }
             }
 
-            return posts.map((row: any) => mapPost(row, currentUserId, likes || [], commentCounts));
+            return posts.map((row: any) =>
+                mapPost(row, currentUserId, likes, commentCounts, linkedData.activitiesMap, linkedData.territoriesMap)
+            );
         } catch (err) {
             console.error('Failed to fetch user posts:', err);
             return [];
