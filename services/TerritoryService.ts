@@ -242,7 +242,7 @@ export const TerritoryService = {
                 .from('territories')
                 .select('*, users!owner_id(username)')
                 .order('claimed_at', { ascending: false })
-                .limit(1000);
+                .limit(3000);
 
             if (error) {
                 console.error('Failed to fetch all territories:', error);
@@ -312,7 +312,7 @@ export const TerritoryService = {
                 .from('territories')
                 .select('id, owner_id, area, claimed_at, users!owner_id(username)')
                 .order('claimed_at', { ascending: false })
-                .limit(1000);
+                .limit(3000);
 
             if (error || !data) {
                 console.error('Failed to fetch leaderboard territories:', error);
@@ -344,6 +344,43 @@ export const TerritoryService = {
             return territories;
         } catch (err) {
             console.error('Leaderboard territories fetch error:', err);
+            return [];
+        }
+    },
+
+    /**
+     * Server-side leaderboard aggregation via RPC.
+     * Falls back to client-side getLeaderboardTerritories() if RPC unavailable.
+     */
+    async getLeaderboardRPC(since: string | null = null, limit: number = 100): Promise<{
+        userId: string;
+        username: string;
+        avatarUrl?: string;
+        totalArea: number;
+        territoryCount: number;
+    }[]> {
+        try {
+            const { data, error } = await supabase.rpc('get_leaderboard', {
+                p_since: since,
+                p_limit: limit,
+            });
+
+            if (error) {
+                console.error('Leaderboard RPC failed, falling back:', error);
+                return [];
+            }
+
+            if (!data) return [];
+
+            return data.map((row: any) => ({
+                userId: row.user_id,
+                username: row.username || 'Unknown',
+                avatarUrl: row.avatar_url || undefined,
+                totalArea: typeof row.total_area === 'number' ? row.total_area : 0,
+                territoryCount: typeof row.territory_count === 'number' ? row.territory_count : 0,
+            }));
+        } catch (err) {
+            console.error('Leaderboard RPC error:', err);
             return [];
         }
     },

@@ -25,7 +25,7 @@ function MapContainerComponent(
     const markerRef = React.useRef<any>(null);
     const polylineRef = React.useRef<any>(null);
     const startMarkerRef = React.useRef<any>(null);
-    const territoryLayersRef = React.useRef<any[]>([]);
+    const territoryLayerMapRef = React.useRef<Map<string, any>>(new Map());
     const [leaflet, setLeaflet] = React.useState<any>(null);
     const [isLoading, setIsLoading] = React.useState(true);
 
@@ -88,6 +88,7 @@ function MapContainerComponent(
         return () => {
             map.remove();
             mapInstanceRef.current = null;
+            territoryLayerMapRef.current.clear();
         };
     }, [leaflet]);
 
@@ -195,32 +196,41 @@ function MapContainerComponent(
         return USER_COLORS[Math.abs(hash) % USER_COLORS.length];
     }, []);
 
-    // Update territories
+    // Update territories incrementally (add new, remove stale, skip unchanged)
     React.useEffect(() => {
         if (!leaflet || !mapInstanceRef.current) return;
 
         const map = mapInstanceRef.current;
+        const layerMap = territoryLayerMapRef.current;
+        const incomingIds = new Set(territories.map(t => t.id));
 
-        territoryLayersRef.current.forEach(layer => layer.remove());
-        territoryLayersRef.current = [];
-
-        territories.forEach(territory => {
-            if (territory.polygon && territory.polygon.length > 2) {
-                const isOwn = currentUserId && territory.ownerId === currentUserId;
-                const color = isOwn ? '#FC4C02' : userColor(territory.ownerId);
-                
-                const latLngs = territory.polygon
-                    .filter(c => Array.isArray(c) && c.length >= 2 && !isNaN(c[0]) && !isNaN(c[1]))
-                    .map(c => [c[1], c[0]]);
-                const polygon = leaflet.polygon(latLngs, {
-                    color: color,
-                    weight: 2,
-                    opacity: 0.8,
-                    fillColor: color,
-                    fillOpacity: isOwn ? 0.2 : 0.12,
-                }).addTo(map);
-                territoryLayersRef.current.push(polygon);
+        // Remove territories no longer in the list
+        for (const [id, layer] of layerMap) {
+            if (!incomingIds.has(id)) {
+                layer.remove();
+                layerMap.delete(id);
             }
+        }
+
+        // Add new territories (skip already-rendered ones)
+        territories.forEach(territory => {
+            if (!territory.polygon || territory.polygon.length <= 2) return;
+            if (layerMap.has(territory.id)) return;
+
+            const isOwn = currentUserId && territory.ownerId === currentUserId;
+            const color = isOwn ? '#FC4C02' : userColor(territory.ownerId);
+
+            const latLngs = territory.polygon
+                .filter(c => Array.isArray(c) && c.length >= 2 && !isNaN(c[0]) && !isNaN(c[1]))
+                .map(c => [c[1], c[0]]);
+            const polygon = leaflet.polygon(latLngs, {
+                color: color,
+                weight: 2,
+                opacity: 0.8,
+                fillColor: color,
+                fillOpacity: isOwn ? 0.2 : 0.12,
+            }).addTo(map);
+            layerMap.set(territory.id, polygon);
         });
     }, [leaflet, territories, currentUserId]);
 

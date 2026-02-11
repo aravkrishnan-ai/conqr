@@ -111,7 +111,8 @@ const MAP_HTML = `
     <div id="map"></div>
     <script>
         (function() {
-            var map, userMarker, pathLine, startMarker, territoryLayers = [];
+            var map, userMarker, pathLine, startMarker;
+            var territoryLayerMap = {}; // keyed by territory id
             var isFirstLocation = true;
             var mapReady = false;
 
@@ -257,32 +258,45 @@ const MAP_HTML = `
 
             window.updateTerritories = function(territories) {
                 if (!map) return;
-                territoryLayers.forEach(function(l) { map.removeLayer(l); });
-                territoryLayers = [];
-                territories.forEach(function(t) {
-                    if (t.polygon && t.polygon.length > 2) {
-                        var isOwn = currentUserId && t.ownerId === currentUserId;
-                        var color = isOwn ? '#FC4C02' : userColor(t.ownerId);
+                // Build a set of incoming territory ids
+                var incomingIds = {};
+                territories.forEach(function(t) { if (t.id) incomingIds[t.id] = true; });
 
-                        var poly = L.polygon(t.polygon, {
-                            color: color,
-                            weight: 2,
-                            opacity: 0.8,
-                            fillColor: color,
-                            fillOpacity: isOwn ? 0.25 : 0.2
-                        }).addTo(map);
-
-                        poly.on('click', function() {
-                            window.ReactNativeWebView.postMessage(JSON.stringify({
-                                type: 'territoryPress',
-                                id: t.id,
-                                ownerId: t.ownerId,
-                                ownerName: t.ownerName || ''
-                            }));
-                        });
-
-                        territoryLayers.push(poly);
+                // Remove territories no longer in the list
+                for (var id in territoryLayerMap) {
+                    if (!incomingIds[id]) {
+                        map.removeLayer(territoryLayerMap[id]);
+                        delete territoryLayerMap[id];
                     }
+                }
+
+                // Add or keep existing territories
+                territories.forEach(function(t) {
+                    if (!t.polygon || t.polygon.length <= 2) return;
+                    // Skip if already rendered
+                    if (territoryLayerMap[t.id]) return;
+
+                    var isOwn = currentUserId && t.ownerId === currentUserId;
+                    var color = isOwn ? '#FC4C02' : userColor(t.ownerId);
+
+                    var poly = L.polygon(t.polygon, {
+                        color: color,
+                        weight: 2,
+                        opacity: 0.8,
+                        fillColor: color,
+                        fillOpacity: isOwn ? 0.25 : 0.2
+                    }).addTo(map);
+
+                    poly.on('click', function() {
+                        window.ReactNativeWebView.postMessage(JSON.stringify({
+                            type: 'territoryPress',
+                            id: t.id,
+                            ownerId: t.ownerId,
+                            ownerName: t.ownerName || ''
+                        }));
+                    });
+
+                    territoryLayerMap[t.id] = poly;
                 });
             };
         })();

@@ -7,7 +7,7 @@ const DEV_EMAIL = 'arav_krishnan@ug29.mesaschool.co';
 // Cache event mode to avoid repeated DB calls within the same session
 let cachedEventMode: boolean | null = null;
 let cacheTimestamp = 0;
-const CACHE_TTL_MS = 30_000; // 30 seconds
+const CACHE_TTL_MS = 300_000; // 5 minutes
 
 export const EventModeService = {
     /**

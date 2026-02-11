@@ -129,47 +129,78 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
   const fetchData = useCallback(async (showRefreshing = false) => {
     if (showRefreshing) setRefreshing(true);
     try {
-      const [session, territories] = await Promise.all([
+      const [session, eventMode] = await Promise.all([
         supabase.auth.getSession(),
-        TerritoryService.getLeaderboardTerritories(),
+        EventModeService.getEventMode(),
       ]);
 
       if (session.data.session?.user) {
         setCurrentUserId(session.data.session.user.id);
       }
-
-      // Check event mode
-      const eventMode = await EventModeService.getEventMode();
       setEventModeActive(eventMode);
 
-      territoriesRef.current = territories.map(t => ({
-        ownerId: t.ownerId,
-        ownerName: t.ownerName,
-        area: t.area,
-        claimedAt: t.claimedAt,
-      }));
+      // Try server-side RPC first (much faster: single aggregated query)
+      const startDate = getStartDate(periodRef.current);
+      const since = startDate ? new Date(startDate).toISOString() : null;
+      const rpcResult = await TerritoryService.getLeaderboardRPC(since, 100);
 
-      // Fetch avatars for unique users
-      const uniqueUserIds = [...new Set(territories.map(t => t.ownerId))];
-      if (uniqueUserIds.length > 0) {
-        try {
-          const { data: users } = await supabase
-            .from('users')
-            .select('id, avatar_url')
-            .in('id', uniqueUserIds);
-          if (users) {
-            const newMap = new Map<string, string>();
-            for (const u of users) {
-              if (u.avatar_url) newMap.set(u.id, u.avatar_url);
-            }
-            setAvatarMap(newMap);
-          }
-        } catch {
-          // Avatar fetch is best-effort
+      if (rpcResult.length > 0) {
+        // RPC succeeded — use server-aggregated data directly
+        const entries: LeaderboardEntry[] = rpcResult.map(r => ({
+          userId: r.userId,
+          username: r.username,
+          totalArea: r.totalArea,
+          territoryCount: r.territoryCount,
+        }));
+        setLeaderboard(entries);
+
+        // Avatars come from the RPC already
+        const newAvatarMap = new Map<string, string>();
+        for (const r of rpcResult) {
+          if (r.avatarUrl) newAvatarMap.set(r.userId, r.avatarUrl);
         }
-      }
+        setAvatarMap(newAvatarMap);
 
-      setLeaderboard(buildLeaderboard(territoriesRef.current, periodRef.current));
+        // Also cache territory data for period switching
+        territoriesRef.current = rpcResult.map(r => ({
+          ownerId: r.userId,
+          ownerName: r.username,
+          area: r.totalArea,
+          claimedAt: 0, // aggregated, no individual timestamp
+        }));
+      } else {
+        // Fallback: fetch raw territories and aggregate client-side
+        const territories = await TerritoryService.getLeaderboardTerritories();
+
+        territoriesRef.current = territories.map(t => ({
+          ownerId: t.ownerId,
+          ownerName: t.ownerName,
+          area: t.area,
+          claimedAt: t.claimedAt,
+        }));
+
+        // Fetch avatars for unique users
+        const uniqueUserIds = [...new Set(territories.map(t => t.ownerId))];
+        if (uniqueUserIds.length > 0) {
+          try {
+            const { data: users } = await supabase
+              .from('users')
+              .select('id, avatar_url')
+              .in('id', uniqueUserIds);
+            if (users) {
+              const newMap = new Map<string, string>();
+              for (const u of users) {
+                if (u.avatar_url) newMap.set(u.id, u.avatar_url);
+              }
+              setAvatarMap(newMap);
+            }
+          } catch {
+            // Avatar fetch is best-effort
+          }
+        }
+
+        setLeaderboard(buildLeaderboard(territoriesRef.current, periodRef.current));
+      }
     } catch (err) {
       console.error('Failed to load leaderboard:', err);
     } finally {
