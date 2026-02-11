@@ -4,7 +4,7 @@ import {
     Dimensions, ActivityIndicator, Alert, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { X, Share2 } from 'lucide-react-native';
+import { X, Share2, Image as ImageIcon, Link } from 'lucide-react-native';
 import { Activity, Territory, Post } from '../lib/types';
 import { ImageShareService } from '../services/ImageShareService';
 import ShareCardActivity from './ShareCardActivity';
@@ -46,10 +46,11 @@ export default function SharePreviewModal({
     const viewShotRef = useRef<any>(null);
     const [sharing, setSharing] = useState(false);
 
-    const handleTextFallback = async () => {
+    const buildShareMessage = (): string => {
         const lines: string[] = [];
         if (cardType === 'activity' && activity) {
             lines.push(`${activity.type} on Conqr`);
+            lines.push('');
             lines.push(`Distance: ${formatDistance(activity.distance)}`);
             lines.push(`Duration: ${formatDuration(activity.duration)}`);
             lines.push(`Pace: ${formatPace(activity.averageSpeed || 0)} /km`);
@@ -58,6 +59,7 @@ export default function SharePreviewModal({
             }
         } else if (cardType === 'territory' && territory) {
             lines.push(`Territory conquered on Conqr!`);
+            lines.push('');
             lines.push(`${territory.name || 'Unnamed Territory'}`);
             lines.push(`Area: ${formatArea(territory.area)}`);
         } else if (cardType === 'post' && post) {
@@ -74,14 +76,25 @@ export default function SharePreviewModal({
         }
         lines.push('');
         lines.push(`Download Conqr Beta: ${DOWNLOAD_URL}`);
-
-        await Share.share({ message: lines.join('\n'), title: 'Conqr' });
+        return lines.join('\n');
     };
 
-    const handleShare = async () => {
+    // Share text with clickable download URL (for WhatsApp, Instagram DMs, etc.)
+    const handleShareLink = async () => {
         setSharing(true);
         try {
-            // Try image capture if ViewShot is available
+            await Share.share({ message: buildShareMessage(), title: 'Conqr' });
+        } catch {
+            // User cancelled
+        } finally {
+            setSharing(false);
+        }
+    };
+
+    // Share the card as an image (for Instagram Stories, saving, etc.)
+    const handleShareImage = async () => {
+        setSharing(true);
+        try {
             if (ViewShot && viewShotRef.current) {
                 try {
                     const uri = await viewShotRef.current.capture({
@@ -98,17 +111,14 @@ export default function SharePreviewModal({
                     }
                 } catch (captureErr) {
                     console.error('[Share] Image capture failed:', captureErr);
-                    // Fall through to text fallback
                 }
             }
-
-            // Fallback to text sharing
-            await handleTextFallback();
+            // Fallback to text if image capture not available
+            await Share.share({ message: buildShareMessage(), title: 'Conqr' });
         } catch (err: any) {
             if (err?.message !== 'User did not share') {
-                // Try text fallback on image share failure
                 try {
-                    await handleTextFallback();
+                    await Share.share({ message: buildShareMessage(), title: 'Conqr' });
                 } catch {
                     // User cancelled
                 }
@@ -193,17 +203,27 @@ export default function SharePreviewModal({
                     <View style={styles.actions}>
                         <TouchableOpacity
                             style={[styles.shareBtn, (!hasContent || sharing) && styles.shareBtnDisabled]}
-                            onPress={handleShare}
+                            onPress={handleShareLink}
                             disabled={!hasContent || sharing}
                         >
                             {sharing ? (
                                 <ActivityIndicator size="small" color="#FFFFFF" />
                             ) : (
                                 <>
-                                    <Share2 color="#FFFFFF" size={20} />
-                                    <Text style={styles.shareBtnText}>Share</Text>
+                                    <Link color="#FFFFFF" size={20} />
+                                    <Text style={styles.shareBtnText}>Share Link</Text>
                                 </>
                             )}
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.shareImageBtn, (!hasContent || sharing) && styles.shareBtnDisabled]}
+                            onPress={handleShareImage}
+                            disabled={!hasContent || sharing}
+                        >
+                            <>
+                                <ImageIcon color="#FFFFFF" size={20} />
+                                <Text style={styles.shareBtnText}>Share Image</Text>
+                            </>
                         </TouchableOpacity>
                     </View>
                 </SafeAreaView>
@@ -266,6 +286,15 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: '#E65100',
+        paddingVertical: 16,
+        borderRadius: 14,
+        gap: 10,
+    },
+    shareImageBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.12)',
         paddingVertical: 16,
         borderRadius: 14,
         gap: 10,

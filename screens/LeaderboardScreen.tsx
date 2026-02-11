@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl, Image, Modal, Dimensions, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Trophy, User, Crown, Medal, Share2, X } from 'lucide-react-native';
+import { Trophy, User, Crown, Medal, Share2, X, Link, Image as ImageIcon } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import BottomTabBar from '../components/BottomTabBar';
 import ShareCardLeaderboard from '../components/ShareCardLeaderboard';
@@ -217,7 +217,7 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
     return <Text style={styles.rankNumber}>{rank}</Text>;
   };
 
-  const handleShareTextFallback = async () => {
+  const buildLeaderboardMessage = (): string => {
     const lines: string[] = ['Conqr Leaderboard - ' + PERIOD_LABELS[period]];
     leaderboard.slice(0, 4).forEach((entry, i) => {
       const rank = i + 1;
@@ -232,10 +232,23 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
       }
     }
     lines.push('', `Download Conqr Beta: ${DOWNLOAD_URL}`);
-    await Share.share({ message: lines.join('\n'), title: 'Conqr Leaderboard' });
+    return lines.join('\n');
   };
 
-  const handleShare = async () => {
+  // Share text with clickable download URL (for WhatsApp, Instagram DMs, etc.)
+  const handleShareLink = async () => {
+    setSharing(true);
+    try {
+      await Share.share({ message: buildLeaderboardMessage(), title: 'Conqr Leaderboard' });
+    } catch {
+      // User cancelled
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  // Share the card as an image (for Instagram Stories, saving, etc.)
+  const handleShareImage = async () => {
     setSharing(true);
     try {
       if (ViewShot && viewShotRef.current) {
@@ -255,11 +268,11 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
           console.error('[Share] Leaderboard image capture failed:', captureErr);
         }
       }
-      await handleShareTextFallback();
+      await Share.share({ message: buildLeaderboardMessage(), title: 'Conqr Leaderboard' });
     } catch (err: any) {
       if (err?.message !== 'User did not share') {
         try {
-          await handleShareTextFallback();
+          await Share.share({ message: buildLeaderboardMessage(), title: 'Conqr Leaderboard' });
         } catch {
           // User cancelled
         }
@@ -452,17 +465,27 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
             <View style={styles.shareActions}>
               <TouchableOpacity
                 style={[styles.shareBtn, sharing && styles.shareBtnDisabled]}
-                onPress={handleShare}
+                onPress={handleShareLink}
                 disabled={sharing}
               >
                 {sharing ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <>
-                    <Share2 color="#FFFFFF" size={20} />
-                    <Text style={styles.shareBtnText}>Share</Text>
+                    <Link color="#FFFFFF" size={20} />
+                    <Text style={styles.shareBtnText}>Share Link</Text>
                   </>
                 )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.shareImageBtn, sharing && styles.shareBtnDisabled]}
+                onPress={handleShareImage}
+                disabled={sharing}
+              >
+                <>
+                  <ImageIcon color="#FFFFFF" size={20} />
+                  <Text style={styles.shareBtnText}>Share Image</Text>
+                </>
               </TouchableOpacity>
             </View>
           </SafeAreaView>
@@ -684,6 +707,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#E65100',
+    paddingVertical: 16,
+    borderRadius: 14,
+    gap: 10,
+  },
+  shareImageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
     paddingVertical: 16,
     borderRadius: 14,
     gap: 10,
