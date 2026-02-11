@@ -3,7 +3,7 @@
     "name": "Conqr",
     "slug": "conqr",
     "scheme": "conqr",
-    "owner": "aravconqr",
+    "owner": "conqrs-organization",
     "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -31,11 +31,11 @@
       "package": "com.aravkrishnan.conqr",
       "versionCode": 2,
       "permissions": [
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION",
-        "FOREGROUND_SERVICE",
-        "FOREGROUND_SERVICE_LOCATION"
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
       ],
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW"
@@ -82,21 +82,22 @@
           "android": {
             "newArchEnabled": false,
             "enableProguardInReleaseBuilds": true,
-            "enableShrinkResourcesInReleaseBuilds": true
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "enableMinifyInReleaseBuilds": true
           }
         }
       ]
     ],
     "extra": {
       "eas": {
-        "projectId": "75ecf103-6cba-4b61-b280-0aaf3276695d"
+        "projectId": "e475c7fa-4c74-4733-9b03-c4af7ddf25a8"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/75ecf103-6cba-4b61-b280-0aaf3276695d"
+      "url": "https://u.expo.dev/e475c7fa-4c74-4733-9b03-c4af7ddf25a8"
     }
   }
 }

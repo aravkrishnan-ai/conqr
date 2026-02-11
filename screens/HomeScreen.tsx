@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, ActivityIn
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect } from '@react-navigation/native';
-import { Swords, ShieldAlert, X, User, UserPlus, MapPin, Check } from 'lucide-react-native';
+import { Swords, ShieldAlert, X, User, UserPlus, MapPin, Check, Zap } from 'lucide-react-native';
 import MapContainer, { MapContainerHandle } from '../components/MapContainer';
 import BottomTabBar from '../components/BottomTabBar';
 import { Territory, GPSPoint, TerritoryInvasion } from '../lib/types';
@@ -11,6 +11,7 @@ import { TerritoryService } from '../services/TerritoryService';
 import { ActivityService } from '../services/ActivityService';
 import { FriendService } from '../services/FriendService';
 import { LocationService } from '../services/LocationService';
+import { EventModeService } from '../services/EventModeService';
 import { supabase } from '../lib/supabase';
 import { useScreenTracking } from '../lib/useScreenTracking';
 
@@ -29,6 +30,7 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
   const [location, setLocation] = React.useState<GPSPoint | null>(null);
   const [territories, setTerritories] = React.useState<Territory[]>([]);
   const [currentUserId, setCurrentUserId] = React.useState<string | undefined>(undefined);
+  const [eventModeActive, setEventModeActive] = React.useState(false);
   const mapRef = React.useRef<MapContainerHandle>(null);
 
   // Invasion modal state
@@ -129,6 +131,10 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
             const allTerritories = await TerritoryService.getAllTerritories();
             setTerritories(allTerritories);
 
+            // Check event mode status
+            const eventMode = await EventModeService.getEventMode();
+            setEventModeActive(eventMode);
+
             // Check for invasion notifications
             const invasions = await TerritoryService.getUnseenInvasions(session.user.id);
             if (invasions.length > 0) {
@@ -210,6 +216,12 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
     <View style={styles.container}>
       <StatusBar style="dark" />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
+        {eventModeActive && (
+          <View style={styles.eventModeBanner}>
+            <Zap color="#FFFFFF" size={14} />
+            <Text style={styles.eventModeBannerText}>Event Mode Active</Text>
+          </View>
+        )}
         <View style={styles.mapWrapper}>
           <MapContainer
             ref={mapRef}
@@ -387,6 +399,19 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+  },
+  eventModeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E65100',
+    paddingVertical: 6,
+    gap: 6,
+  },
+  eventModeBannerText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   mapWrapper: {
     flex: 1,

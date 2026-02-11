@@ -1,14 +1,15 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, TextInput, Alert, ActionSheetIOS, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, TextInput, Alert, ActionSheetIOS, Platform, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { User, Flame, Pencil, Check, X, ChevronRight, MapPin, Clock, Footprints, Bike, PersonStanding, LogOut, Map, TrendingUp, Trash2, Shield, Camera } from 'lucide-react-native';
+import { User, Flame, Pencil, Check, X, ChevronRight, MapPin, Clock, Footprints, Bike, PersonStanding, LogOut, Map, TrendingUp, Trash2, Shield, Camera, Zap } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import BottomTabBar from '../components/BottomTabBar';
 import { supabase } from '../lib/supabase';
 import { AuthService } from '../services/AuthService';
 import { ActivityService } from '../services/ActivityService';
 import { TerritoryService } from '../services/TerritoryService';
+import { EventModeService } from '../services/EventModeService';
 import { UserProfile, Activity as ActivityType } from '../lib/types';
 import { useScreenTracking } from '../lib/useScreenTracking';
 import { formatDistance, formatDuration } from '../utils/shareCardUtils';
@@ -35,6 +36,9 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
   const [editBio, setEditBio] = useState('');
   const [saving, setSaving] = useState(false);
   const [updatingAvatar, setUpdatingAvatar] = useState(false);
+  const [isDevUser, setIsDevUser] = useState(false);
+  const [eventModeEnabled, setEventModeEnabled] = useState(false);
+  const [togglingEventMode, setTogglingEventMode] = useState(false);
 
   const initialLoadComplete = React.useRef(false);
   const isFetching = React.useRef(false);
@@ -57,6 +61,14 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
 
         const userTerritories = await TerritoryService.getUserTerritories(session.user.id);
         setTerritoryCount(userTerritories.length);
+
+        // Check if current user is the dev
+        const isDev = EventModeService.isDevUser(session.user.email);
+        setIsDevUser(isDev);
+        if (isDev) {
+          const eventMode = await EventModeService.getEventMode();
+          setEventModeEnabled(eventMode);
+        }
       }
     } catch (err) {
       console.error('Fetch data error:', err);
@@ -147,6 +159,58 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
 
   const handlePrivacyPolicy = () => {
     navigation.navigate('PrivacyPolicy');
+  };
+
+  const handleToggleEventMode = (newValue: boolean) => {
+    if (togglingEventMode) return;
+
+    if (!newValue) {
+      // Turning OFF — warn about territory resolution
+      Alert.alert(
+        'End Event Mode?',
+        'This will assign all overlapping territories to their most recent claimant and restore normal territory conquering.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'End Event',
+            style: 'destructive',
+            onPress: async () => {
+              setTogglingEventMode(true);
+              const result = await EventModeService.setEventMode(false);
+              if (result.success) {
+                setEventModeEnabled(false);
+                Alert.alert('Event Mode Disabled', 'Territory conquering has been restored.');
+              } else {
+                Alert.alert('Error', result.error || 'Failed to disable event mode.');
+              }
+              setTogglingEventMode(false);
+            },
+          },
+        ]
+      );
+    } else {
+      // Turning ON
+      Alert.alert(
+        'Enable Event Mode?',
+        'Territory conquering will be disabled. All users can claim territory without taking others\' land. This is for running competitive events.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Enable',
+            onPress: async () => {
+              setTogglingEventMode(true);
+              const result = await EventModeService.setEventMode(true);
+              if (result.success) {
+                setEventModeEnabled(true);
+              } else {
+                Alert.alert('Error', result.error || 'Failed to enable event mode.');
+              }
+              setTogglingEventMode(false);
+            },
+          },
+        ]
+      );
+    }
   };
 
   const startEditing = () => {
@@ -504,6 +568,33 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
             </View>
           )}
 
+          {/* Event Mode (dev only) */}
+          {isDevUser && (
+            <View style={styles.settingsSection}>
+              <View style={styles.settingsRow}>
+                <Zap color={eventModeEnabled ? '#E65100' : '#666666'} size={18} />
+                <Text style={[styles.settingsText, eventModeEnabled && { color: '#E65100', fontWeight: '700' }]}>
+                  Event Mode
+                </Text>
+                {togglingEventMode ? (
+                  <ActivityIndicator size="small" color="#E65100" />
+                ) : (
+                  <Switch
+                    value={eventModeEnabled}
+                    onValueChange={handleToggleEventMode}
+                    trackColor={{ false: '#E0E0E0', true: 'rgba(230, 81, 0, 0.4)' }}
+                    thumbColor={eventModeEnabled ? '#E65100' : '#CCCCCC'}
+                  />
+                )}
+              </View>
+              {eventModeEnabled && (
+                <Text style={styles.eventModeHint}>
+                  Territory conquering is disabled. All claims coexist.
+                </Text>
+              )}
+            </View>
+          )}
+
           {/* Settings */}
           <View style={styles.settingsSection}>
             <TouchableOpacity style={styles.settingsRow} onPress={handlePrivacyPolicy}>
@@ -839,6 +930,13 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#F0F0F0',
     marginLeft: 46,
+  },
+  eventModeHint: {
+    fontSize: 12,
+    color: '#E65100',
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    marginTop: -4,
   },
 
   // Delete account

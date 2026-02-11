@@ -2,13 +2,14 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl, Image, Modal, Dimensions, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Trophy, User, Crown, Medal, Share2, X, Link, Image as ImageIcon } from 'lucide-react-native';
+import { Trophy, User, Crown, Medal, Share2, X, Link, Image as ImageIcon, Zap } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import BottomTabBar from '../components/BottomTabBar';
 import ShareCardLeaderboard from '../components/ShareCardLeaderboard';
 import { ImageShareService } from '../services/ImageShareService';
 import { TerritoryService } from '../services/TerritoryService';
 import { AuthService } from '../services/AuthService';
+import { EventModeService } from '../services/EventModeService';
 import { supabase } from '../lib/supabase';
 import { useScreenTracking } from '../lib/useScreenTracking';
 import { SHARE_CARD_WIDTH, SHARE_CARD_HEIGHT, DOWNLOAD_URL } from '../utils/shareCardUtils';
@@ -119,6 +120,7 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
   const [avatarMap, setAvatarMap] = useState<Map<string, string>>(new Map());
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [eventModeActive, setEventModeActive] = useState(false);
   const viewShotRef = useRef<any>(null);
 
   const periodRef = useRef<TimePeriod>(period);
@@ -135,6 +137,10 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
       if (session.data.session?.user) {
         setCurrentUserId(session.data.session.user.id);
       }
+
+      // Check event mode
+      const eventMode = await EventModeService.getEventMode();
+      setEventModeActive(eventMode);
 
       territoriesRef.current = territories.map(t => ({
         ownerId: t.ownerId,
@@ -299,6 +305,12 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
           <View style={styles.headerCenter}>
             <Trophy color="#E65100" size={24} />
             <Text style={styles.headerTitle}>Leaderboard</Text>
+            {eventModeActive && (
+              <View style={styles.eventBadge}>
+                <Zap color="#FFFFFF" size={10} />
+                <Text style={styles.eventBadgeText}>EVENT</Text>
+              </View>
+            )}
           </View>
           <TouchableOpacity
             style={styles.shareHeaderBtn}
@@ -528,6 +540,22 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     color: '#1A1A1A',
+  },
+  eventBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E65100',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    gap: 3,
+    marginLeft: 4,
+  },
+  eventBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   shareHeaderBtn: {
     width: 40,

@@ -178,6 +178,23 @@ function MapContainerComponent(
         }
     }, [leaflet, path]);
 
+    // Deterministic color palette for user territories (matches native MapContainer)
+    const userColor = React.useCallback((userId: string | undefined) => {
+        const USER_COLORS = [
+            '#FC4C02', '#3B82F6', '#10B981', '#F59E0B', '#EF4444',
+            '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16', '#F97316',
+            '#6366F1', '#14B8A6', '#E879F9', '#22D3EE', '#A3E635',
+            '#FB923C', '#818CF8', '#2DD4BF', '#C084FC', '#34D399'
+        ];
+        if (!userId) return '#888888';
+        let hash = 0;
+        for (let i = 0; i < userId.length; i++) {
+            hash = ((hash << 5) - hash) + userId.charCodeAt(i);
+            hash = hash & hash;
+        }
+        return USER_COLORS[Math.abs(hash) % USER_COLORS.length];
+    }, []);
+
     // Update territories
     React.useEffect(() => {
         if (!leaflet || !mapInstanceRef.current) return;
@@ -190,7 +207,7 @@ function MapContainerComponent(
         territories.forEach(territory => {
             if (territory.polygon && territory.polygon.length > 2) {
                 const isOwn = currentUserId && territory.ownerId === currentUserId;
-                const color = isOwn ? '#FC4C02' : '#888888';
+                const color = isOwn ? '#FC4C02' : userColor(territory.ownerId);
                 
                 const latLngs = territory.polygon
                     .filter(c => Array.isArray(c) && c.length >= 2 && !isNaN(c[0]) && !isNaN(c[1]))
@@ -203,32 +220,6 @@ function MapContainerComponent(
                     fillOpacity: isOwn ? 0.2 : 0.12,
                 }).addTo(map);
                 territoryLayersRef.current.push(polygon);
-
-                // Add label with owner name if available
-                if (territory.ownerName && territory.center) {
-                    const labelText = isOwn ? 'Your Territory' : `${territory.ownerName}'s territory`;
-                    const labelBgColor = isOwn ? 'rgba(252, 76, 2, 0.9)' : 'rgba(100, 100, 100, 0.85)';
-                    const labelIcon = leaflet.divIcon({
-                        className: '',
-                        html: `<div style="
-                            background: ${labelBgColor};
-                            color: white;
-                            font-size: 11px;
-                            font-weight: 600;
-                            padding: 4px 8px;
-                            border-radius: 4px;
-                            white-space: nowrap;
-                            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-                        ">${labelText}</div>`,
-                        iconSize: [100, 20],
-                        iconAnchor: [50, 15]
-                    });
-                    const label = leaflet.marker([territory.center.lat, territory.center.lng], {
-                        icon: labelIcon,
-                        interactive: false
-                    }).addTo(map);
-                    territoryLayersRef.current.push(label);
-                }
             }
         });
     }, [leaflet, territories, currentUserId]);

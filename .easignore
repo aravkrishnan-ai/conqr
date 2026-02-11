@@ -1,0 +1,44 @@
+# Same as .gitignore but allows credentials needed for EAS Build
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native (keep keystore for signing)
+.kotlin/
+*.orig.*
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files — env vars are set on EAS instead
+.env
+.env*.local
+
+# Google Play Store service account key
+google-play-service-account.json
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android

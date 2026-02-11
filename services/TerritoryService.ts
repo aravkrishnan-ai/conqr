@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { db } from '../lib/db';
 import { GameEngine } from './GameEngine';
 import { AnalyticsService } from './AnalyticsService';
+import { EventModeService } from './EventModeService';
 
 /**
  * Safely parse JSON data from cloud
@@ -241,7 +242,7 @@ export const TerritoryService = {
                 .from('territories')
                 .select('*, users!owner_id(username)')
                 .order('claimed_at', { ascending: false })
-                .limit(100);
+                .limit(1000);
 
             if (error) {
                 console.error('Failed to fetch all territories:', error);
@@ -311,7 +312,7 @@ export const TerritoryService = {
                 .from('territories')
                 .select('id, owner_id, area, claimed_at, users!owner_id(username)')
                 .order('claimed_at', { ascending: false })
-                .limit(500);
+                .limit(1000);
 
             if (error || !data) {
                 console.error('Failed to fetch leaderboard territories:', error);
@@ -376,6 +377,26 @@ export const TerritoryService = {
         allTerritories: Territory[],
         invaderUsername?: string
     ): Promise<ConquerResult> {
+        // In event mode, skip conquering entirely — territories coexist
+        const eventMode = await EventModeService.getEventMode();
+        if (eventMode) {
+            AnalyticsService.trackEvent('territory_claimed', {
+                area: territory.area,
+                perimeter: territory.perimeter,
+                invasionCount: 0,
+                eventMode: true,
+            });
+
+            await this.saveTerritory(territory);
+            return {
+                newTerritory: territory,
+                modifiedTerritories: [],
+                deletedTerritoryIds: [],
+                invasions: [],
+                totalConqueredArea: 0,
+            };
+        }
+
         const conquerResult = GameEngine.resolveOverlaps(
             territory, allTerritories, invaderUsername
         );
