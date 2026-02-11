@@ -13,7 +13,7 @@ import { getDistance } from 'geolib';
 const STILLNESS_WINDOW_MS = 3000;
 const STILLNESS_THRESHOLD_M = 3;
 const MIN_POINT_DISTANCE_M = 2;
-const MAX_ACCURACY_METERS = 50;
+const MAX_ACCURACY_METERS = 100;
 
 // Module-level state — survives component unmounts
 let _isTracking = false;

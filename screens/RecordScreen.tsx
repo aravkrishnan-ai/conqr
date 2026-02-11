@@ -181,12 +181,14 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
       const startTime = trackingResult.startTime || Date.now();
       const endTime = Date.now();
 
-      const SAVE_TIMEOUT_MS = 20000;
+      // Non-destructive timeout: warn the user but don't cancel the save.
+      // The finally block handles cleanup when the save actually completes.
+      const SLOW_SAVE_WARN_MS = 15000;
+      let slowSaveWarned = false;
       const saveTimeout = setTimeout(() => {
-        setIsSaving(false);
-        resetTrackingState();
-        Alert.alert("Save Timeout", "Activity save took too long.");
-      }, SAVE_TIMEOUT_MS);
+        slowSaveWarned = true;
+        Alert.alert("Still Saving", "Your activity is taking longer than usual to save. Please wait...");
+      }, SLOW_SAVE_WARN_MS);
 
       try {
         const { data: { session } } = await supabase.auth.getSession();

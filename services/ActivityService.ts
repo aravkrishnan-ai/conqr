@@ -2,6 +2,7 @@ import { Activity, GPSPoint, ActivityType } from '../lib/types';
 import { supabase } from '../lib/supabase';
 import { db } from '../lib/db';
 import { getDistance } from 'geolib';
+import { retryWithBackoff } from '../lib/retry';
 
 // Timeout helper for async operations
 const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, errorMsg: string): Promise<T> => {
@@ -203,8 +204,8 @@ export const ActivityService = {
                     return;
                 }
 
-                const syncOperation = async () => {
-                    return await supabase
+                const syncResult = await retryWithBackoff(async () => {
+                    const result = await supabase
                         .from('activities')
                         .upsert({
                             id: activity.id,
@@ -219,13 +220,10 @@ export const ActivityService = {
                             territory_id: activity.territoryId || null,
                             average_speed: activity.averageSpeed ?? null
                         });
-                };
-
-                const { error } = await withTimeout(
-                    syncOperation(),
-                    SYNC_TIMEOUT_MS,
-                    'Cloud sync timed out'
-                );
+                    if (result.error) throw result.error;
+                    return result;
+                }).catch(err => ({ error: err as any }));
+                const error = 'error' in syncResult ? syncResult.error : null;
 
                 if (error) {
                     console.error('Failed to sync activity to cloud:', error);
@@ -440,21 +438,26 @@ export const ActivityService = {
         let syncedCount = 0;
         for (const activity of unsynced) {
             try {
-                const { error } = await supabase
-                    .from('activities')
-                    .upsert({
-                        id: activity.id,
-                        user_id: activity.userId,
-                        type: activity.type,
-                        start_time: new Date(activity.startTime).toISOString(),
-                        end_time: activity.endTime ? new Date(activity.endTime).toISOString() : null,
-                        distance: activity.distance,
-                        duration: activity.duration,
-                        polylines: JSON.stringify(activity.polylines),
-                        is_synced: true,
-                        territory_id: activity.territoryId || null,
-                        average_speed: activity.averageSpeed ?? null
-                    });
+                const syncResult = await retryWithBackoff(async () => {
+                    const result = await supabase
+                        .from('activities')
+                        .upsert({
+                            id: activity.id,
+                            user_id: activity.userId,
+                            type: activity.type,
+                            start_time: new Date(activity.startTime).toISOString(),
+                            end_time: activity.endTime ? new Date(activity.endTime).toISOString() : null,
+                            distance: activity.distance,
+                            duration: activity.duration,
+                            polylines: JSON.stringify(activity.polylines),
+                            is_synced: true,
+                            territory_id: activity.territoryId || null,
+                            average_speed: activity.averageSpeed ?? null
+                        });
+                    if (result.error) throw result.error;
+                    return result;
+                }).catch(err => ({ error: err as any }));
+                const error = 'error' in syncResult ? syncResult.error : null;
 
                 if (!error) {
                     await db.activities.update(activity.id, { isSynced: true });

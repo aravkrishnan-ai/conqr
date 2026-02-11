@@ -104,7 +104,22 @@
       "Bash(git ls-tree:*)",
       "WebFetch(domain:aravkrishnan-ai.github.io)",
       "Bash(CI=1 npx eas update:*)",
-      "Bash(CI=1 npx eas-cli:*)"
+      "Bash(CI=1 npx eas-cli:*)",
+      "Bash(EXPO_TOKEN=xjFpb-R-QrboiEN_1OJhh7lkULwYqwNQDhvrTMSz npx eas-cli:*)",
+      "Bash(npx expo whoami:*)",
+      "Bash(EXPO_TOKEN=2SKb38ynVSUdSbnor9V5whDGSx6JgVGxD6r74gkZ npx eas-cli:*)",
+      "Bash(git -C /home/runner/workspace diff:*)",
+      "Bash(git -C /home/runner/workspace log --oneline -5)",
+      "Bash(EXPO_TOKEN=r1gxl_gnnqnFku3XNoTrT3lIkl4KqqkvtNKQeyEB npx eas-cli:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_c9c435266e89507907b89c9a625de5c0450c427a npx supabase db push:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_c9c435266e89507907b89c9a625de5c0450c427a npx supabase migration repair:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_c9c435266e89507907b89c9a625de5c0450c427a npx supabase migration list:*)",
+      "Bash(SUPABASE_ACCESS_TOKEN=sbp_92967b5514cdea3cafb2400a95f2c8e2c22f6f60 npx supabase:*)",
+      "Bash(EXPO_TOKEN=r1gxl_gnnqnFku3XNoTrT3lIkl4KqqkvtNKQeyEB npx eas update:*)",
+      "Bash(source:*)",
+      "Bash(PGHOST=\"aws-1-ap-south-1.pooler.supabase.com\" PGPORT=\"5432\" PGUSER=\"cli_login_postgres.ckrdbwqklcxsfcnlfdvi\" PGPASSWORD=\"fZMRqoLmQVkAeSQlCRnzMGnhAoCWwAiy\" PGDATABASE=\"postgres\" psql:*)",
+      "Bash(PGHOST=\"aws-1-ap-south-1.pooler.supabase.com\" PGPORT=\"5432\" PGUSER=\"postgres.ckrdbwqklcxsfcnlfdvi\" PGPASSWORD=\"fZMRqoLmQVkAeSQlCRnzMGnhAoCWwAiy\" PGDATABASE=\"postgres\" psql:*)",
+      "Bash(EXPO_TOKEN=\"\" npx eas-cli:*)"
     ]
   }
 }

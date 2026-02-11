@@ -4,6 +4,7 @@ import { db } from '../lib/db';
 import { GameEngine } from './GameEngine';
 import { AnalyticsService } from './AnalyticsService';
 import { EventModeService } from './EventModeService';
+import { retryWithBackoff } from '../lib/retry';
 
 /**
  * Safely parse JSON data from cloud
@@ -146,20 +147,24 @@ export const TerritoryService = {
                 return territory;
             }
 
-            const { error } = await supabase
-                .from('territories')
-                .upsert({
-                    id: territory.id,
-                    owner_id: territory.ownerId,
-                    activity_id: territory.activityId,
-                    name: territory.name || null,
-                    claimed_at: new Date(territory.claimedAt).toISOString(),
-                    area: territory.area,
-                    perimeter: territory.perimeter,
-                    center: { lat: territory.center.lat, lng: territory.center.lng },
-                    polygon: territory.polygon,
-                    history: territory.history || []
-                });
+            const { error } = await retryWithBackoff(async () => {
+                const result = await supabase
+                    .from('territories')
+                    .upsert({
+                        id: territory.id,
+                        owner_id: territory.ownerId,
+                        activity_id: territory.activityId,
+                        name: territory.name || null,
+                        claimed_at: new Date(territory.claimedAt).toISOString(),
+                        area: territory.area,
+                        perimeter: territory.perimeter,
+                        center: { lat: territory.center.lat, lng: territory.center.lng },
+                        polygon: territory.polygon,
+                        history: territory.history || []
+                    });
+                if (result.error) throw result.error;
+                return result;
+            }).catch(err => ({ error: err }));
 
             if (error) {
                 console.error('Failed to sync territory to cloud:', error);
@@ -475,37 +480,41 @@ export const TerritoryService = {
 
             if (hasConquering) {
                 // Use atomic RPC for territory + conquering
-                const { error } = await supabase.rpc('conquer_territory', {
-                    p_new_territory_id: territory.id,
-                    p_owner_id: territory.ownerId,
-                    p_owner_username: invaderUsername || null,
-                    p_activity_id: territory.activityId,
-                    p_name: territory.name || null,
-                    p_claimed_at: new Date(territory.claimedAt).toISOString(),
-                    p_area: territory.area,
-                    p_perimeter: territory.perimeter,
-                    p_center: { lat: territory.center.lat, lng: territory.center.lng },
-                    p_polygon: territory.polygon,
-                    p_history: territory.history || [],
-                    p_modified_territories: conquerResult.modifiedTerritories.map(t => ({
-                        id: t.id,
-                        polygon: JSON.stringify(t.polygon),
-                        area: t.area,
-                        perimeter: t.perimeter,
-                        center: JSON.stringify({ lat: t.center.lat, lng: t.center.lng }),
-                        history: JSON.stringify(t.history || []),
-                    })),
-                    p_deleted_territory_ids: conquerResult.deletedTerritoryIds,
-                    p_invasions: conquerResult.invasions.map(inv => ({
-                        invaded_user_id: inv.invadedUserId,
-                        invader_user_id: inv.invaderUserId,
-                        invader_username: inv.invaderUsername || null,
-                        invaded_territory_id: inv.invadedTerritoryId,
-                        new_territory_id: inv.newTerritoryId,
-                        overlap_area: inv.overlapArea,
-                        territory_was_destroyed: inv.territoryWasDestroyed,
-                    })),
-                });
+                const { error } = await retryWithBackoff(async () => {
+                    const result = await supabase.rpc('conquer_territory', {
+                        p_new_territory_id: territory.id,
+                        p_owner_id: territory.ownerId,
+                        p_owner_username: invaderUsername || null,
+                        p_activity_id: territory.activityId,
+                        p_name: territory.name || null,
+                        p_claimed_at: new Date(territory.claimedAt).toISOString(),
+                        p_area: territory.area,
+                        p_perimeter: territory.perimeter,
+                        p_center: { lat: territory.center.lat, lng: territory.center.lng },
+                        p_polygon: territory.polygon,
+                        p_history: territory.history || [],
+                        p_modified_territories: conquerResult.modifiedTerritories.map(t => ({
+                            id: t.id,
+                            polygon: JSON.stringify(t.polygon),
+                            area: t.area,
+                            perimeter: t.perimeter,
+                            center: JSON.stringify({ lat: t.center.lat, lng: t.center.lng }),
+                            history: JSON.stringify(t.history || []),
+                        })),
+                        p_deleted_territory_ids: conquerResult.deletedTerritoryIds,
+                        p_invasions: conquerResult.invasions.map(inv => ({
+                            invaded_user_id: inv.invadedUserId,
+                            invader_user_id: inv.invaderUserId,
+                            invader_username: inv.invaderUsername || null,
+                            invaded_territory_id: inv.invadedTerritoryId,
+                            new_territory_id: inv.newTerritoryId,
+                            overlap_area: inv.overlapArea,
+                            territory_was_destroyed: inv.territoryWasDestroyed,
+                        })),
+                    });
+                    if (result.error) throw result.error;
+                    return result;
+                }).catch(err => ({ error: err }));
 
                 if (error) {
                     console.error('Conquer RPC failed, falling back:', error);
