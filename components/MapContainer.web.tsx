@@ -75,6 +75,7 @@ function MapContainerComponent(
             zoom: 16,
             zoomControl: false,
             attributionControl: false,
+            preferCanvas: true,
         });
 
         leaflet.tileLayer(DARK_TILE_URL, {

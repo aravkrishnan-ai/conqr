@@ -44,3 +44,6 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.get_leaderboard(TIMESTAMPTZ, INT) TO authenticated;
 REVOKE EXECUTE ON FUNCTION public.get_leaderboard(TIMESTAMPTZ, INT) FROM anon;
+
+-- Enable Realtime on territories table for live map updates
+ALTER PUBLICATION supabase_realtime ADD TABLE public.territories;

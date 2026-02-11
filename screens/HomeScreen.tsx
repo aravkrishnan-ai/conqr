@@ -178,6 +178,71 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
     };
   }, []);
 
+  // Realtime subscription for live territory updates from other users
+  React.useEffect(() => {
+    const channel = supabase
+      .channel('territories-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'territories' },
+        (payload: any) => {
+          const row = payload.new;
+          if (!row || !row.id) return;
+          // Don't process our own inserts — we already have them locally
+          if (row.owner_id === currentUserId) return;
+
+          const center = typeof row.center === 'string' ? JSON.parse(row.center) : row.center;
+          const polygon = typeof row.polygon === 'string' ? JSON.parse(row.polygon) : row.polygon;
+          if (!Array.isArray(polygon) || polygon.length < 3) return;
+
+          const newTerritory: Territory = {
+            id: row.id,
+            name: row.name || '',
+            ownerId: row.owner_id,
+            activityId: row.activity_id || '',
+            claimedAt: row.claimed_at ? new Date(row.claimed_at).getTime() : Date.now(),
+            area: typeof row.area === 'number' ? row.area : 0,
+            perimeter: typeof row.perimeter === 'number' ? row.perimeter : 0,
+            center: center || { lat: 0, lng: 0 },
+            polygon,
+            history: [],
+          };
+
+          // Resolve owner name then merge into state
+          (async () => {
+            try {
+              const { data } = await supabase
+                .from('users')
+                .select('username')
+                .eq('id', row.owner_id)
+                .single();
+              if (data?.username) newTerritory.ownerName = data.username;
+            } catch {
+              newTerritory.ownerName = 'User ' + row.owner_id.substring(0, 6);
+            }
+            setTerritories(prev => {
+              if (prev.some(t => t.id === newTerritory.id)) return prev;
+              return [newTerritory, ...prev];
+            });
+          })();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'territories' },
+        (payload: any) => {
+          const oldRow = payload.old;
+          if (!oldRow || !oldRow.id) return;
+          setTerritories(prev => prev.filter(t => t.id !== oldRow.id));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUserId]);
+
   // Center map on territory when navigated with focus params
   const focusLat = route?.params?.focusTerritoryLat;
   const focusLng = route?.params?.focusTerritoryLng;

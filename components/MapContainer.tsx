@@ -142,7 +142,8 @@ const MAP_HTML = `
                 attributionControl: false,
                 fadeAnimation: false,
                 zoomAnimation: true,
-                markerZoomAnimation: false
+                markerZoomAnimation: false,
+                preferCanvas: true
             }).setView([37.7749, -122.4194], 16);
 
             L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
