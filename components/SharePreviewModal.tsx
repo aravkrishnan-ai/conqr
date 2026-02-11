@@ -5,10 +5,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { X, Share2 } from 'lucide-react-native';
-import { Activity, Territory } from '../lib/types';
+import { Activity, Territory, Post } from '../lib/types';
 import { ImageShareService } from '../services/ImageShareService';
 import ShareCardActivity from './ShareCardActivity';
 import ShareCardTerritory from './ShareCardTerritory';
+import ShareCardPost from './ShareCardPost';
 import { SHARE_CARD_WIDTH, SHARE_CARD_HEIGHT, DOWNLOAD_URL, formatDistance, formatDuration, formatPace, formatArea } from '../utils/shareCardUtils';
 
 // Try to import ViewShot - may not be available if native module isn't in the build
@@ -22,9 +23,10 @@ try {
 interface SharePreviewModalProps {
     visible: boolean;
     onClose: () => void;
-    cardType: 'activity' | 'territory';
+    cardType: 'activity' | 'territory' | 'post';
     activity?: Activity;
     territory?: Territory;
+    post?: Post;
 }
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -39,6 +41,7 @@ export default function SharePreviewModal({
     cardType,
     activity,
     territory,
+    post,
 }: SharePreviewModalProps) {
     const viewShotRef = useRef<any>(null);
     const [sharing, setSharing] = useState(false);
@@ -57,6 +60,17 @@ export default function SharePreviewModal({
             lines.push(`Territory conquered on Conqr!`);
             lines.push(`${territory.name || 'Unnamed Territory'}`);
             lines.push(`Area: ${formatArea(territory.area)}`);
+        } else if (cardType === 'post' && post) {
+            if (post.content) {
+                lines.push(post.content);
+            }
+            if (post.postType === 'activity_share' && post.activity) {
+                lines.push('');
+                lines.push(`${post.activity.type} - ${formatDistance(post.activity.distance)} in ${formatDuration(post.activity.duration)}`);
+            } else if (post.postType === 'territory_share' && post.territory) {
+                lines.push('');
+                lines.push(`Territory: ${post.territory.name || 'Unnamed'} (${formatArea(post.territory.area)})`);
+            }
         }
         lines.push('');
         lines.push(`Download Conqr Beta: ${DOWNLOAD_URL}`);
@@ -106,7 +120,7 @@ export default function SharePreviewModal({
 
     if (!visible) return null;
 
-    const hasContent = cardType === 'activity' ? !!activity : !!territory;
+    const hasContent = cardType === 'activity' ? !!activity : cardType === 'territory' ? !!territory : !!post;
 
     const cardContent = (
         <>
@@ -114,6 +128,8 @@ export default function SharePreviewModal({
                 <ShareCardActivity activity={activity} territory={territory} />
             ) : cardType === 'territory' && territory ? (
                 <ShareCardTerritory territory={territory} />
+            ) : cardType === 'post' && post ? (
+                <ShareCardPost post={post} />
             ) : null}
         </>
     );

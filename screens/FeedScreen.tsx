@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
   ActivityIndicator, Image, TextInput, RefreshControl,
-  Modal, Alert, KeyboardAvoidingView, Platform, Share, Dimensions
+  Modal, Alert, KeyboardAvoidingView, Platform, Dimensions
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -14,6 +14,7 @@ import {
 import Svg, { Polyline as SvgPolyline, Circle, Polygon as SvgPolygon, Line, Rect, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { useFocusEffect } from '@react-navigation/native';
 import BottomTabBar from '../components/BottomTabBar';
+import SharePreviewModal from '../components/SharePreviewModal';
 import { FeedService } from '../services/FeedService';
 import { ActivityService } from '../services/ActivityService';
 import { TerritoryService } from '../services/TerritoryService';
@@ -61,6 +62,10 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
 
   // Action loading
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // Share modal state
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [sharePost, setSharePost] = useState<Post | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -216,18 +221,9 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
     ]);
   };
 
-  const handleSharePost = async (post: Post) => {
-    try {
-      let message = post.content;
-      if (post.postType === 'activity_share') {
-        message += '\n\nShared via Conqr';
-      } else if (post.postType === 'territory_share') {
-        message += '\n\nShared via Conqr';
-      }
-      await Share.share({ message, title: 'Conqr Post' });
-    } catch (err) {
-      // User cancelled or error
-    }
+  const handleSharePost = (post: Post) => {
+    setSharePost(post);
+    setShowShareModal(true);
   };
 
   const formatTimeAgo = (timestamp: number): string => {
@@ -635,14 +631,12 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
             )}
           </TouchableOpacity>
 
-          {isOwner && (
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => handleSharePost(item)}
-            >
-              <Share2 color="#999999" size={20} />
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={() => handleSharePost(item)}
+          >
+            <Share2 color="#999999" size={20} />
+          </TouchableOpacity>
         </View>
 
         {expandedComments === item.id && (
@@ -848,6 +842,19 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
+
+      {/* Share Post Modal */}
+      {sharePost && (
+        <SharePreviewModal
+          visible={showShareModal}
+          onClose={() => {
+            setShowShareModal(false);
+            setSharePost(null);
+          }}
+          cardType="post"
+          post={sharePost}
+        />
+      )}
     </View>
   );
 }

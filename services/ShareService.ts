@@ -1,5 +1,6 @@
 import { Share } from 'react-native';
 import { Activity, Territory, Post } from '../lib/types';
+import { DOWNLOAD_URL } from '../utils/shareCardUtils';
 
 export const formatDistance = (meters: number): string => {
     if (meters < 1000) return `${Math.round(meters)}m`;
@@ -45,7 +46,7 @@ export const ShareService = {
         }
 
         lines.push('');
-        lines.push('Shared via Conqr');
+        lines.push(`Download Conqr Beta: ${DOWNLOAD_URL}`);
 
         try {
             await Share.share({
@@ -65,7 +66,7 @@ export const ShareService = {
             `Area: ${formatArea(territory.area)}`,
             `Perimeter: ${formatDistance(territory.perimeter)}`,
             '',
-            'Shared via Conqr',
+            `Download Conqr Beta: ${DOWNLOAD_URL}`,
         ];
 
         try {
@@ -94,7 +95,7 @@ export const ShareService = {
         }
 
         lines.push('');
-        lines.push('Shared via Conqr');
+        lines.push(`Download Conqr Beta: ${DOWNLOAD_URL}`);
 
         try {
             await Share.share({
