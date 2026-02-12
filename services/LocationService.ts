@@ -71,8 +71,8 @@ export const LocationService = {
 
             this.subscription = await Location.watchPositionAsync(
                 {
-                    accuracy: Location.Accuracy.High,
-                    timeInterval: 1000,
+                    accuracy: Location.Accuracy.BestForNavigation,
+                    timeInterval: 800,
                     distanceInterval: 1,
                 },
                 (location) => {

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Modal, Animated, Easing, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Modal, Animated, Easing, Platform, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Footprints, Bike, PersonStanding, Trophy, MapPin, Clock, Gauge, Map, X, Swords, Share2 } from 'lucide-react-native';
@@ -60,6 +60,8 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
   }>({ visible: false, title: '', distance: '', duration: '', pace: '' });
 
   const [distanceToStart, setDistanceToStart] = React.useState<number | null>(null);
+  const [territoryNameInput, setTerritoryNameInput] = React.useState('');
+  const pendingTerritoryRef = React.useRef<Territory | null>(null);
 
   const mapRef = React.useRef<MapContainerHandle>(null);
   const timerRef = React.useRef<NodeJS.Timeout | null>(null);
@@ -145,18 +147,16 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
         setElapsedTime(elapsed);
 
         const storePath = TrackingStore.path;
-        const recentPath = storePath.slice(-5);
-        if (recentPath.length >= 2) {
-          const recentSpeeds = recentPath
-            .map(p => p.speed)
-            .filter((s): s is number => s !== null && s !== undefined && s >= 0);
-          if (recentSpeeds.length > 0) {
-            setCurrentSpeed(recentSpeeds.reduce((a, b) => a + b, 0) / recentSpeeds.length);
-          }
+        const dist = TrackingStore.runningDistance;
+
+        // Calculate pace from accumulated distance and elapsed time
+        if (dist > 0 && elapsed > 0) {
+          setCurrentSpeed(dist / elapsed); // meters per second
         }
 
         // Distance to start for loop closure indicator
-        if (storePath.length >= 2) {
+        // Only compute when user has traveled enough to avoid showing at start
+        if (storePath.length >= 2 && dist >= 200) {
           const start = storePath[0];
           const end = storePath[storePath.length - 1];
           try {
@@ -312,6 +312,8 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
           const paceFormatted = averageSpeed > 0 ? ActivityService.calculatePace(averageSpeed) : '--:--';
 
           if (savedTerritory) {
+            pendingTerritoryRef.current = savedTerritory;
+            setTerritoryNameInput('');
             setSuccessModal({
               visible: true,
               title: conqueredArea > 0 ? 'Territory Invaded!' : 'Territory Conquered!',
@@ -348,6 +350,26 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
     }
   };
 
+  const saveTerritoryName = async () => {
+    const territory = pendingTerritoryRef.current;
+    const name = territoryNameInput.trim();
+    if (territory && name) {
+      territory.name = name;
+      try {
+        await TerritoryService.saveTerritory(territory);
+        setSavedTerritories(prev =>
+          prev.map(t => t.id === territory.id ? { ...t, name } : t)
+        );
+      } catch { /* name save is best-effort */ }
+    }
+    pendingTerritoryRef.current = null;
+  };
+
+  const handleCloseSuccessModal = () => {
+    saveTerritoryName();
+    setSuccessModal(prev => ({ ...prev, visible: false }));
+  };
+
   const resetTrackingState = () => {
     setElapsedTime(0);
     setCurrentSpeed(0);
@@ -370,12 +392,12 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
   };
 
   const formatPace = (speed: number): string => {
-    if (speed <= 0) return '0.00';
+    if (speed <= 0) return '--:--';
     const paceSeconds = 1000 / speed;
     const mins = Math.floor(paceSeconds / 60);
     const secs = Math.floor(paceSeconds % 60);
-    if (mins > 99) return '0.00';
-    return `${mins}.${secs.toString().padStart(2, '0')}`;
+    if (mins > 99) return '--:--';
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'friends' | 'leaderboard' | 'feed') => {
@@ -451,7 +473,7 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
               </View>
               <View style={styles.statItem}>
                 <Text style={styles.statValue}>{formatPace(currentSpeed)}</Text>
-                <Text style={styles.statLabel}>Average pace</Text>
+                <Text style={styles.statLabel}>Pace</Text>
               </View>
             </View>
 
@@ -534,13 +556,13 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
         visible={successModal.visible}
         transparent
         animationType="fade"
-        onRequestClose={() => setSuccessModal(prev => ({ ...prev, visible: false }))}
+        onRequestClose={handleCloseSuccessModal}
       >
         <View style={styles.successModalBackdrop}>
           <View style={styles.successModalContainer}>
             <TouchableOpacity
               style={styles.successModalClose}
-              onPress={() => setSuccessModal(prev => ({ ...prev, visible: false }))}
+              onPress={handleCloseSuccessModal}
             >
               <X color="#999999" size={24} />
             </TouchableOpacity>
@@ -550,6 +572,18 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
             </View>
 
             <Text style={styles.successTitle}>{successModal.title}</Text>
+
+            {successModal.territory && (
+              <TextInput
+                style={styles.territoryNameInput}
+                placeholder="Name your territory (optional)"
+                placeholderTextColor="#AAAAAA"
+                value={territoryNameInput}
+                onChangeText={setTerritoryNameInput}
+                maxLength={40}
+                returnKeyType="done"
+              />
+            )}
 
             <View style={styles.successStatsGrid}>
               <View style={styles.successStatBox}>
@@ -591,6 +625,7 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
               <TouchableOpacity
                 style={styles.successShareButton}
                 onPress={() => {
+                  saveTerritoryName();
                   setSuccessModal(prev => ({ ...prev, visible: false }));
                   setShowShareModal(true);
                 }}
@@ -600,7 +635,7 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.successDoneButton}
-                onPress={() => setSuccessModal(prev => ({ ...prev, visible: false }))}
+                onPress={handleCloseSuccessModal}
               >
                 <Text style={styles.successDoneText}>Done</Text>
               </TouchableOpacity>
@@ -837,7 +872,18 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
     color: '#1A1A1A',
-    marginBottom: 20,
+    marginBottom: 16,
+    textAlign: 'center' as const,
+  },
+  territoryNameInput: {
+    width: '100%',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    fontSize: 15,
+    color: '#1A1A1A',
+    marginBottom: 16,
     textAlign: 'center' as const,
   },
   successStatsGrid: {

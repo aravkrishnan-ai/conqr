@@ -20,7 +20,8 @@ const MIN_GPS_POINTS = 2; // Must have at least 2 GPS points
 
 export const ActivityService = {
     /**
-     * Calculate total distance from a path of GPS points
+     * Calculate total distance from a path of GPS points.
+     * Filters out GPS spikes by checking implied speed between consecutive points.
      */
     calculateDistance(path: GPSPoint[]): number {
         if (!Array.isArray(path) || path.length < 2) return 0;
@@ -44,10 +45,23 @@ export const ActivityService = {
                         { latitude: lastValid.lat, longitude: lastValid.lng },
                         { latitude: point.lat, longitude: point.lng }
                     );
-                    // Sanity check - skip unrealistic distances (> 1km in one segment = likely GPS error)
-                    if (dist > 0 && dist < 1000) {
-                        totalDistance += dist;
+                    // Skip unrealistic segments
+                    if (dist <= 0 || dist >= 500) {
+                        // Don't update lastValid — skip this point entirely
+                        continue;
                     }
+
+                    // Check implied speed between points to reject GPS spikes
+                    const timeDelta = (point.timestamp - lastValid.timestamp) / 1000;
+                    if (timeDelta > 0 && timeDelta < 120) {
+                        const impliedSpeed = dist / timeDelta;
+                        // 25 m/s = 90 km/h — anything above is a GPS artifact
+                        if (impliedSpeed > 25) {
+                            continue;
+                        }
+                    }
+
+                    totalDistance += dist;
                 } catch (err) {
                     console.error('Error calculating distance between points:', err);
                 }

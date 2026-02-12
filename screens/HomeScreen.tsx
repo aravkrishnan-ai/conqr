@@ -31,6 +31,8 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
   const [territories, setTerritories] = React.useState<Territory[]>([]);
   const [currentUserId, setCurrentUserId] = React.useState<string | undefined>(undefined);
   const [eventModeActive, setEventModeActive] = React.useState(false);
+  const [eventName, setEventName] = React.useState<string | null>(null);
+  const [recentEventEnded, setRecentEventEnded] = React.useState<string | null>(null);
   const [locationError, setLocationError] = React.useState<string | null>(null);
   const mapRef = React.useRef<MapContainerHandle>(null);
 
@@ -132,9 +134,29 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
             const allTerritories = await TerritoryService.getAllTerritories();
             setTerritories(allTerritories);
 
-            // Check event mode status
-            const eventMode = await EventModeService.getEventMode();
+            // Check event mode status and get event details
+            const [eventMode, currentEvt, pastEvts] = await Promise.all([
+              EventModeService.getEventMode(),
+              EventModeService.getCurrentEvent(),
+              EventModeService.getPastEvents(),
+            ]);
             setEventModeActive(eventMode);
+            setEventName(currentEvt?.name || null);
+
+            // Check if an event ended recently (within 24 hours) (#8)
+            if (!eventMode && pastEvts.length > 0) {
+              const latest = pastEvts[0];
+              if (latest.endedAt) {
+                const endedAgo = Date.now() - new Date(latest.endedAt).getTime();
+                if (endedAgo < 24 * 60 * 60 * 1000) {
+                  setRecentEventEnded(latest.name);
+                } else {
+                  setRecentEventEnded(null);
+                }
+              }
+            } else {
+              setRecentEventEnded(null);
+            }
 
             // Check for invasion notifications
             const invasions = await TerritoryService.getUnseenInvasions(session.user.id);
@@ -284,10 +306,31 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
       <StatusBar style="dark" />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         {eventModeActive && (
-          <View style={styles.eventModeBanner}>
+          <TouchableOpacity
+            style={styles.eventModeBanner}
+            onPress={() => navigation.navigate('Leaderboard')}
+            activeOpacity={0.8}
+          >
             <Zap color="#FFFFFF" size={14} />
-            <Text style={styles.eventModeBannerText}>Event Mode Active</Text>
-          </View>
+            <Text style={styles.eventModeBannerText}>
+              {eventName ? `Event: ${eventName}` : 'Event Active'}
+            </Text>
+            <Text style={styles.eventModeBannerHint}>Tap to join</Text>
+          </TouchableOpacity>
+        )}
+        {!eventModeActive && recentEventEnded && (
+          <TouchableOpacity
+            style={styles.eventEndedBanner}
+            onPress={() => {
+              setRecentEventEnded(null);
+              navigation.navigate('Leaderboard');
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.eventEndedBannerText}>
+              "{recentEventEnded}" has ended — tap to see results
+            </Text>
+          </TouchableOpacity>
         )}
         <View style={styles.mapWrapper}>
           <MapContainer
@@ -482,15 +525,32 @@ const styles = StyleSheet.create({
   eventModeBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: '#E65100',
-    paddingVertical: 6,
-    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    gap: 8,
   },
   eventModeBannerText: {
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
+    flex: 1,
+  },
+  eventModeBannerHint: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  eventEndedBanner: {
+    backgroundColor: '#1A1A1A',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  eventEndedBannerText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   mapWrapper: {
     flex: 1,

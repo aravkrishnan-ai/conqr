@@ -2,14 +2,14 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl, Image, Modal, Dimensions, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Trophy, User, Crown, Medal, Share2, X, Link, Image as ImageIcon, Zap } from 'lucide-react-native';
+import { Trophy, User, Crown, Medal, Share2, X, Link, Image as ImageIcon, Zap, Calendar, ChevronDown, ChevronRight } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import BottomTabBar from '../components/BottomTabBar';
 import ShareCardLeaderboard from '../components/ShareCardLeaderboard';
 import { ImageShareService } from '../services/ImageShareService';
 import { TerritoryService } from '../services/TerritoryService';
 import { AuthService } from '../services/AuthService';
-import { EventModeService } from '../services/EventModeService';
+import { EventModeService, EventInfo } from '../services/EventModeService';
 import { supabase } from '../lib/supabase';
 import { useScreenTracking } from '../lib/useScreenTracking';
 import { SHARE_CARD_WIDTH, SHARE_CARD_HEIGHT, DOWNLOAD_URL } from '../utils/shareCardUtils';
@@ -33,6 +33,7 @@ interface LeaderboardScreenProps {
 }
 
 type TimePeriod = 'week' | 'month' | 'year' | 'all';
+type LeaderboardTab = TimePeriod | 'events';
 
 interface LeaderboardEntry {
   userId: string;
@@ -65,17 +66,11 @@ function getStartDate(period: TimePeriod): number | null {
   }
 }
 
-function buildLeaderboard(
+function buildLeaderboardFromTerritories(
   territories: { ownerId: string; ownerName?: string; area: number; claimedAt: number }[],
-  period: TimePeriod
 ): LeaderboardEntry[] {
-  const startDate = getStartDate(period);
-  const filtered = startDate
-    ? territories.filter(t => t.claimedAt >= startDate)
-    : territories;
-
   const userMap = new Map<string, LeaderboardEntry>();
-  for (const t of filtered) {
+  for (const t of territories) {
     const existing = userMap.get(t.ownerId);
     if (existing) {
       existing.totalArea += t.area;
@@ -96,9 +91,14 @@ function buildLeaderboard(
 
 function formatArea(sqMeters: number): string {
   if (sqMeters < 10000) {
-    return `${Math.round(sqMeters).toLocaleString()} m²`;
+    return `${Math.round(sqMeters).toLocaleString()} m\u00B2`;
   }
   return `${(sqMeters / 10000).toFixed(2)} ha`;
+}
+
+function formatEventDate(isoString: string): string {
+  const d = new Date(isoString);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 const PERIOD_LABELS: Record<TimePeriod, string> = {
@@ -108,14 +108,21 @@ const PERIOD_LABELS: Record<TimePeriod, string> = {
   all: 'All Time',
 };
 
+const TAB_LABELS: Record<LeaderboardTab, string> = {
+  week: 'Week',
+  month: 'Month',
+  year: 'Year',
+  all: 'All Time',
+  events: 'Events',
+};
+
 export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps) {
   useScreenTracking('Leaderboard');
-  const [period, setPeriod] = useState<TimePeriod>('all');
+  const [tab, setTab] = useState<LeaderboardTab>('all');
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | undefined>();
-  const territoriesRef = useRef<{ ownerId: string; ownerName?: string; area: number; claimedAt: number }[]>([]);
   const autoRefreshRef = useRef<NodeJS.Timeout | null>(null);
   const [avatarMap, setAvatarMap] = useState<Map<string, string>>(new Map());
   const [shareModalVisible, setShareModalVisible] = useState(false);
@@ -123,56 +130,44 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
   const [eventModeActive, setEventModeActive] = useState(false);
   const viewShotRef = useRef<any>(null);
 
-  const periodRef = useRef<TimePeriod>(period);
-  periodRef.current = period;
+  // Event-specific state
+  const [currentEvent, setCurrentEvent] = useState<EventInfo | null>(null);
+  const [pastEvents, setPastEvents] = useState<EventInfo[]>([]);
+  const [eventLeaderboard, setEventLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  const [pastEventLeaderboard, setPastEventLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [loadingPastEvent, setLoadingPastEvent] = useState(false);
+  const [hasJoinedEvent, setHasJoinedEvent] = useState(false);
+  const [joiningEvent, setJoiningEvent] = useState(false);
+  // Cache all territories for event leaderboard building
+  const allTerritoriesRef = useRef<{ ownerId: string; ownerName?: string; area: number; claimedAt: number }[]>([]);
+
+  const tabRef = useRef<LeaderboardTab>(tab);
+  tabRef.current = tab;
 
   const fetchData = useCallback(async (showRefreshing = false) => {
     if (showRefreshing) setRefreshing(true);
     try {
-      const [session, eventMode] = await Promise.all([
+      const [session, eventMode, currentEvt, pastEvts, joined] = await Promise.all([
         supabase.auth.getSession(),
         EventModeService.getEventMode(),
+        EventModeService.getCurrentEvent(),
+        EventModeService.getPastEvents(),
+        EventModeService.hasJoinedCurrentEvent(),
       ]);
 
       if (session.data.session?.user) {
         setCurrentUserId(session.data.session.user.id);
       }
       setEventModeActive(eventMode);
+      setCurrentEvent(currentEvt);
+      setPastEvents(pastEvts);
+      setHasJoinedEvent(joined);
 
-      // Try server-side RPC first (much faster: single aggregated query)
-      const startDate = getStartDate(periodRef.current);
-      const since = startDate ? new Date(startDate).toISOString() : null;
-      const rpcResult = await TerritoryService.getLeaderboardRPC(since, 100);
-
-      if (rpcResult.length > 0) {
-        // RPC succeeded — use server-aggregated data directly
-        const entries: LeaderboardEntry[] = rpcResult.map(r => ({
-          userId: r.userId,
-          username: r.username,
-          totalArea: r.totalArea,
-          territoryCount: r.territoryCount,
-        }));
-        setLeaderboard(entries);
-
-        // Avatars come from the RPC already
-        const newAvatarMap = new Map<string, string>();
-        for (const r of rpcResult) {
-          if (r.avatarUrl) newAvatarMap.set(r.userId, r.avatarUrl);
-        }
-        setAvatarMap(newAvatarMap);
-
-        // Also cache territory data for period switching
-        territoriesRef.current = rpcResult.map(r => ({
-          ownerId: r.userId,
-          ownerName: r.username,
-          area: r.totalArea,
-          claimedAt: 0, // aggregated, no individual timestamp
-        }));
-      } else {
-        // Fallback: fetch raw territories and aggregate client-side
+      if (tabRef.current === 'events') {
+        // Load all territories for event leaderboard
         const territories = await TerritoryService.getLeaderboardTerritories();
-
-        territoriesRef.current = territories.map(t => ({
+        allTerritoriesRef.current = territories.map(t => ({
           ownerId: t.ownerId,
           ownerName: t.ownerName,
           area: t.area,
@@ -199,7 +194,78 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
           }
         }
 
-        setLeaderboard(buildLeaderboard(territoriesRef.current, periodRef.current));
+        // Build current event leaderboard — only count territories from participants (#2)
+        if (currentEvt) {
+          const startTime = new Date(currentEvt.startedAt).getTime();
+          const participants = currentEvt.participants || [];
+          const eventTerritories = allTerritoriesRef.current.filter(t =>
+            t.claimedAt >= startTime && (participants.length === 0 || participants.includes(t.ownerId))
+          );
+          setEventLeaderboard(buildLeaderboardFromTerritories(eventTerritories));
+        } else {
+          setEventLeaderboard([]);
+        }
+      } else {
+        // Regular period-based leaderboard
+        const currentPeriod = tabRef.current as TimePeriod;
+        const startDate = getStartDate(currentPeriod);
+        const since = startDate ? new Date(startDate).toISOString() : null;
+        const rpcResult = await TerritoryService.getLeaderboardRPC(since, 100);
+
+        if (rpcResult.length > 0) {
+          const entries: LeaderboardEntry[] = rpcResult.map(r => ({
+            userId: r.userId,
+            username: r.username,
+            totalArea: r.totalArea,
+            territoryCount: r.territoryCount,
+          }));
+          setLeaderboard(entries);
+
+          const newAvatarMap = new Map<string, string>();
+          for (const r of rpcResult) {
+            if (r.avatarUrl) newAvatarMap.set(r.userId, r.avatarUrl);
+          }
+          setAvatarMap(newAvatarMap);
+        } else {
+          // Fallback: fetch raw territories and aggregate client-side
+          const territories = await TerritoryService.getLeaderboardTerritories();
+
+          const territoryData = territories.map(t => ({
+            ownerId: t.ownerId,
+            ownerName: t.ownerName,
+            area: t.area,
+            claimedAt: t.claimedAt,
+          }));
+
+          // Also cache for event tab
+          allTerritoriesRef.current = territoryData;
+
+          // Fetch avatars for unique users
+          const uniqueUserIds = [...new Set(territories.map(t => t.ownerId))];
+          if (uniqueUserIds.length > 0) {
+            try {
+              const { data: users } = await supabase
+                .from('users')
+                .select('id, avatar_url')
+                .in('id', uniqueUserIds);
+              if (users) {
+                const newMap = new Map<string, string>();
+                for (const u of users) {
+                  if (u.avatar_url) newMap.set(u.id, u.avatar_url);
+                }
+                setAvatarMap(newMap);
+              }
+            } catch {
+              // Avatar fetch is best-effort
+            }
+          }
+
+          // Filter by period and build leaderboard
+          const filteredTerritories = startDate
+            ? territoryData.filter(t => t.claimedAt >= startDate)
+            : territoryData;
+          setLeaderboard(buildLeaderboardFromTerritories(filteredTerritories));
+        }
       }
     } catch (err) {
       console.error('Failed to load leaderboard:', err);
@@ -209,12 +275,12 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
     }
   }, []);
 
-  // Rebuild leaderboard when period changes (using cached data)
+  // Re-fetch data when tab changes
   useEffect(() => {
-    if (territoriesRef.current.length > 0) {
-      setLeaderboard(buildLeaderboard(territoriesRef.current, period));
+    if (!loading) {
+      fetchData();
     }
-  }, [period]);
+  }, [tab]);
 
   // Load data on focus
   useFocusEffect(
@@ -239,12 +305,76 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
     fetchData(true);
   }, [fetchData]);
 
-  const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'friends' | 'leaderboard' | 'feed') => {
-    if (tab === 'home') navigation.navigate('Home');
-    else if (tab === 'record') navigation.navigate('Record');
-    else if (tab === 'profile') navigation.navigate('Profile');
-    else if (tab === 'friends') navigation.navigate('Friends');
-    else if (tab === 'feed') navigation.navigate('Feed');
+  // Load a past event's leaderboard on demand
+  const handleExpandPastEvent = useCallback(async (event: EventInfo) => {
+    if (expandedEventId === event.id) {
+      setExpandedEventId(null);
+      return;
+    }
+
+    setLoadingPastEvent(true);
+    setExpandedEventId(event.id);
+
+    try {
+      // Use cached territories if available, otherwise fetch
+      if (allTerritoriesRef.current.length === 0) {
+        const territories = await TerritoryService.getLeaderboardTerritories();
+        allTerritoriesRef.current = territories.map(t => ({
+          ownerId: t.ownerId,
+          ownerName: t.ownerName,
+          area: t.area,
+          claimedAt: t.claimedAt,
+        }));
+      }
+
+      const startTime = new Date(event.startedAt).getTime();
+      const endTime = event.endedAt ? new Date(event.endedAt).getTime() : Date.now();
+      const participants = event.participants || [];
+      const eventTerritories = allTerritoriesRef.current.filter(
+        t => t.claimedAt >= startTime && t.claimedAt <= endTime &&
+          (participants.length === 0 || participants.includes(t.ownerId))
+      );
+      setPastEventLeaderboard(buildLeaderboardFromTerritories(eventTerritories));
+    } catch (err) {
+      console.error('Failed to load past event leaderboard:', err);
+      setPastEventLeaderboard([]);
+    } finally {
+      setLoadingPastEvent(false);
+    }
+  }, [expandedEventId]);
+
+  const handleJoinEvent = useCallback(async () => {
+    if (!currentUserId) return;
+    setJoiningEvent(true);
+    try {
+      const success = await EventModeService.joinEvent(currentUserId);
+      if (success) {
+        setHasJoinedEvent(true);
+        // Refresh to get updated participant list
+        EventModeService.clearCache();
+        fetchData();
+      }
+    } catch { /* ignore */ }
+    finally { setJoiningEvent(false); }
+  }, [currentUserId, fetchData]);
+
+  const handleLeaveEvent = useCallback(async () => {
+    setJoiningEvent(true);
+    try {
+      await EventModeService.leaveEvent(currentUserId);
+      setHasJoinedEvent(false);
+      EventModeService.clearCache();
+      fetchData();
+    } catch { /* ignore */ }
+    finally { setJoiningEvent(false); }
+  }, [currentUserId, fetchData]);
+
+  const handleTabPress = (navTab: 'home' | 'record' | 'profile' | 'friends' | 'leaderboard' | 'feed') => {
+    if (navTab === 'home') navigation.navigate('Home');
+    else if (navTab === 'record') navigation.navigate('Record');
+    else if (navTab === 'profile') navigation.navigate('Profile');
+    else if (navTab === 'friends') navigation.navigate('Friends');
+    else if (navTab === 'feed') navigation.navigate('Feed');
   };
 
   const renderRankBadge = (rank: number) => {
@@ -254,18 +384,31 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
     return <Text style={styles.rankNumber}>{rank}</Text>;
   };
 
+  const getDisplayLabel = (): string => {
+    if (tab === 'events') {
+      return currentEvent ? currentEvent.name : 'Events';
+    }
+    return PERIOD_LABELS[tab as TimePeriod];
+  };
+
+  const getDisplayLeaderboard = (): LeaderboardEntry[] => {
+    if (tab === 'events') return eventLeaderboard;
+    return leaderboard;
+  };
+
   const buildLeaderboardMessage = (): string => {
-    const lines: string[] = ['Conqr Leaderboard - ' + PERIOD_LABELS[period]];
-    leaderboard.slice(0, 4).forEach((entry, i) => {
+    const displayBoard = getDisplayLeaderboard();
+    const lines: string[] = ['Conqr Leaderboard - ' + getDisplayLabel()];
+    displayBoard.slice(0, 4).forEach((entry, i) => {
       const rank = i + 1;
       const prefix = rank === 1 ? '\uD83D\uDC51' : rank === 2 ? '\uD83E\uDD48' : rank === 3 ? '\uD83E\uDD49' : `${rank}.`;
       lines.push(`${prefix} ${entry.username} - ${formatArea(entry.totalArea)}`);
     });
     if (currentUserId) {
-      const idx = leaderboard.findIndex(e => e.userId === currentUserId);
+      const idx = displayBoard.findIndex(e => e.userId === currentUserId);
       if (idx >= 4) {
         lines.push('...');
-        lines.push(`${idx + 1}. ${leaderboard[idx].username} (Me) - ${formatArea(leaderboard[idx].totalArea)}`);
+        lines.push(`${idx + 1}. ${displayBoard[idx].username} (Me) - ${formatArea(displayBoard[idx].totalArea)}`);
       }
     }
     lines.push('', `Download Conqr Beta: ${DOWNLOAD_URL}`);
@@ -319,6 +462,160 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
     }
   };
 
+  const renderLeaderboardRows = (entries: LeaderboardEntry[]) => {
+    return entries.map((entry, index) => {
+      const rank = index + 1;
+      const isCurrentUser = entry.userId === currentUserId;
+      return (
+        <TouchableOpacity
+          key={entry.userId}
+          style={[
+            styles.leaderboardRow,
+            rank <= 3 && styles.topThreeRow,
+            isCurrentUser && styles.currentUserRow,
+          ]}
+          onPress={() => {
+            if (isCurrentUser) {
+              navigation.navigate('Profile');
+            } else {
+              navigation.navigate('UserProfile', { userId: entry.userId });
+            }
+          }}
+          activeOpacity={0.7}
+        >
+          <View style={styles.rankBadge}>
+            {renderRankBadge(rank)}
+          </View>
+
+          <View style={styles.userAvatar}>
+            {avatarMap.get(entry.userId) ? (
+              <Image source={{ uri: avatarMap.get(entry.userId) }} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <User color="#E65100" size={18} />
+              </View>
+            )}
+          </View>
+
+          <View style={styles.userInfo}>
+            <Text style={[styles.username, isCurrentUser && styles.currentUserText]} numberOfLines={1}>
+              {entry.username}{isCurrentUser ? ' (You)' : ''}
+            </Text>
+            <Text style={styles.territoryCount}>
+              {entry.territoryCount} {entry.territoryCount === 1 ? 'territory' : 'territories'}
+            </Text>
+          </View>
+
+          <View style={styles.areaContainer}>
+            <Text style={[styles.areaValue, rank <= 3 && styles.topThreeArea]}>
+              {formatArea(entry.totalArea)}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      );
+    });
+  };
+
+  const renderEventsContent = () => {
+    return (
+      <>
+        {/* Current Event */}
+        {currentEvent && eventModeActive && (
+          <View style={styles.eventSection}>
+            <View style={styles.eventSectionHeader}>
+              <View style={styles.eventLiveBadge}>
+                <Zap color="#FFFFFF" size={12} fill="#FFFFFF" />
+                <Text style={styles.eventLiveText}>LIVE</Text>
+              </View>
+              <Text style={styles.eventSectionTitle} numberOfLines={1}>{currentEvent.name}</Text>
+            </View>
+            <Text style={styles.eventDateText}>
+              Started {formatEventDate(currentEvent.startedAt)}
+              {currentEvent.participants && currentEvent.participants.length > 0
+                ? ` \u00B7 ${currentEvent.participants.length} participant${currentEvent.participants.length === 1 ? '' : 's'}`
+                : ''}
+            </Text>
+
+            {/* Join / Leave button */}
+            <TouchableOpacity
+              style={[styles.eventJoinBtn, hasJoinedEvent && styles.eventLeaveBtn]}
+              onPress={hasJoinedEvent ? handleLeaveEvent : handleJoinEvent}
+              disabled={joiningEvent}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.eventJoinBtnText, hasJoinedEvent && styles.eventLeaveBtnText]}>
+                {joiningEvent ? '...' : hasJoinedEvent ? 'Leave Event' : 'Join Event'}
+              </Text>
+            </TouchableOpacity>
+            {hasJoinedEvent && (
+              <Text style={styles.eventJoinedHint}>
+                Territories you claim won't overlap others during this event
+              </Text>
+            )}
+
+            {eventLeaderboard.length > 0 ? (
+              renderLeaderboardRows(eventLeaderboard)
+            ) : (
+              <View style={styles.eventEmptyState}>
+                <Text style={styles.eventEmptyText}>No territories claimed yet in this event</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Past Events */}
+        {pastEvents.length > 0 && (
+          <View style={styles.pastEventsSection}>
+            <Text style={styles.pastEventsTitle}>Past Events</Text>
+            {pastEvents.map((event) => (
+              <View key={event.id} style={styles.pastEventCard}>
+                <TouchableOpacity
+                  style={styles.pastEventHeader}
+                  onPress={() => handleExpandPastEvent(event)}
+                  activeOpacity={0.7}
+                >
+                  <Calendar color="#666666" size={16} />
+                  <View style={styles.pastEventInfo}>
+                    <Text style={styles.pastEventName} numberOfLines={1}>{event.name}</Text>
+                    <Text style={styles.pastEventDates}>
+                      {formatEventDate(event.startedAt)}
+                      {event.endedAt ? ` - ${formatEventDate(event.endedAt)}` : ''}
+                    </Text>
+                  </View>
+                  {expandedEventId === event.id ? (
+                    <ChevronDown color="#999999" size={18} />
+                  ) : (
+                    <ChevronRight color="#999999" size={18} />
+                  )}
+                </TouchableOpacity>
+                {expandedEventId === event.id && (
+                  <View style={styles.pastEventLeaderboard}>
+                    {loadingPastEvent ? (
+                      <ActivityIndicator color="#E65100" size="small" style={{ paddingVertical: 16 }} />
+                    ) : pastEventLeaderboard.length > 0 ? (
+                      renderLeaderboardRows(pastEventLeaderboard)
+                    ) : (
+                      <Text style={styles.pastEventEmpty}>No territories were claimed during this event</Text>
+                    )}
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Empty state when no events at all */}
+        {!currentEvent && pastEvents.length === 0 && (
+          <View style={styles.emptyState}>
+            <Calendar color="#CCCCCC" size={48} />
+            <Text style={styles.emptyText}>No events yet</Text>
+            <Text style={styles.emptySubtext}>Events will appear here when they are started</Text>
+          </View>
+        )}
+      </>
+    );
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
@@ -326,6 +623,8 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
       </View>
     );
   }
+
+  const displayBoard = getDisplayLeaderboard();
 
   return (
     <View style={styles.container}>
@@ -346,25 +645,36 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
           <TouchableOpacity
             style={styles.shareHeaderBtn}
             onPress={() => setShareModalVisible(true)}
-            disabled={leaderboard.length === 0}
+            disabled={tab === 'events' ? eventLeaderboard.length === 0 : leaderboard.length === 0}
           >
-            <Share2 color={leaderboard.length === 0 ? '#CCCCCC' : '#1A1A1A'} size={22} />
+            <Share2
+              color={(tab === 'events' ? eventLeaderboard.length === 0 : leaderboard.length === 0) ? '#CCCCCC' : '#1A1A1A'}
+              size={22}
+            />
           </TouchableOpacity>
         </View>
 
-        <View style={styles.periodTabs}>
-          {(['week', 'month', 'year', 'all'] as TimePeriod[]).map((p) => (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.periodTabsScroll}
+          contentContainerStyle={styles.periodTabsContent}
+        >
+          {(['week', 'month', 'year', 'all', 'events'] as LeaderboardTab[]).map((t) => (
             <TouchableOpacity
-              key={p}
-              style={[styles.periodTab, period === p && styles.periodTabActive]}
-              onPress={() => setPeriod(p)}
+              key={t}
+              style={[styles.periodTab, tab === t && styles.periodTabActive]}
+              onPress={() => setTab(t)}
             >
-              <Text style={[styles.periodTabText, period === p && styles.periodTabTextActive]}>
-                {PERIOD_LABELS[p]}
+              <Text style={[styles.periodTabText, tab === t && styles.periodTabTextActive]}>
+                {TAB_LABELS[t]}
               </Text>
+              {t === 'events' && eventModeActive && tab !== 'events' && (
+                <View style={styles.eventDot} />
+              )}
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
 
         <ScrollView
           style={styles.content}
@@ -378,66 +688,22 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
           }
           showsVerticalScrollIndicator={false}
         >
-          {leaderboard.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Trophy color="#CCCCCC" size={48} />
-              <Text style={styles.emptyText}>No territories claimed yet</Text>
-              <Text style={styles.emptySubtext}>
-                {period === 'all' ? 'Be the first to conquer territory!' : `No territory claimed ${PERIOD_LABELS[period].toLowerCase()}`}
-              </Text>
-            </View>
+          {tab === 'events' ? (
+            renderEventsContent()
           ) : (
-            leaderboard.map((entry, index) => {
-              const rank = index + 1;
-              const isCurrentUser = entry.userId === currentUserId;
-              return (
-                <TouchableOpacity
-                  key={entry.userId}
-                  style={[
-                    styles.leaderboardRow,
-                    rank <= 3 && styles.topThreeRow,
-                    isCurrentUser && styles.currentUserRow,
-                  ]}
-                  onPress={() => {
-                    if (isCurrentUser) {
-                      navigation.navigate('Profile');
-                    } else {
-                      navigation.navigate('UserProfile', { userId: entry.userId });
-                    }
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.rankBadge}>
-                    {renderRankBadge(rank)}
-                  </View>
-
-                  <View style={styles.userAvatar}>
-                    {avatarMap.get(entry.userId) ? (
-                      <Image source={{ uri: avatarMap.get(entry.userId) }} style={styles.avatarImage} />
-                    ) : (
-                      <View style={styles.avatarPlaceholder}>
-                        <User color="#E65100" size={18} />
-                      </View>
-                    )}
-                  </View>
-
-                  <View style={styles.userInfo}>
-                    <Text style={[styles.username, isCurrentUser && styles.currentUserText]} numberOfLines={1}>
-                      {entry.username}{isCurrentUser ? ' (You)' : ''}
-                    </Text>
-                    <Text style={styles.territoryCount}>
-                      {entry.territoryCount} {entry.territoryCount === 1 ? 'territory' : 'territories'}
-                    </Text>
-                  </View>
-
-                  <View style={styles.areaContainer}>
-                    <Text style={[styles.areaValue, rank <= 3 && styles.topThreeArea]}>
-                      {formatArea(entry.totalArea)}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })
+            <>
+              {displayBoard.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Trophy color="#CCCCCC" size={48} />
+                  <Text style={styles.emptyText}>No territories claimed yet</Text>
+                  <Text style={styles.emptySubtext}>
+                    {tab === 'all' ? 'Be the first to conquer territory!' : `No territory claimed ${PERIOD_LABELS[tab as TimePeriod].toLowerCase()}`}
+                  </Text>
+                </View>
+              ) : (
+                renderLeaderboardRows(displayBoard)
+              )}
+            </>
           )}
           <View style={styles.bottomPadding} />
         </ScrollView>
@@ -482,9 +748,9 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
                       }}
                     >
                       <ShareCardLeaderboard
-                        leaderboard={leaderboard}
+                        leaderboard={displayBoard}
                         currentUserId={currentUserId}
-                        periodLabel={PERIOD_LABELS[period]}
+                        periodLabel={getDisplayLabel()}
                       />
                     </ViewShot>
                   ) : (
@@ -495,9 +761,9 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
                       transformOrigin: 'top left',
                     }}>
                       <ShareCardLeaderboard
-                        leaderboard={leaderboard}
+                        leaderboard={displayBoard}
                         currentUserId={currentUserId}
-                        periodLabel={PERIOD_LABELS[period]}
+                        periodLabel={getDisplayLabel()}
                       />
                     </View>
                   )}
@@ -594,18 +860,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  periodTabs: {
-    flexDirection: 'row',
+  periodTabsScroll: {
+    flexGrow: 0,
+  },
+  periodTabsContent: {
     paddingHorizontal: 16,
     paddingVertical: 12,
     gap: 8,
   },
   periodTab: {
-    flex: 1,
     paddingVertical: 8,
+    paddingHorizontal: 16,
     borderRadius: 20,
     backgroundColor: '#F5F5F5',
     alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
   },
   periodTabActive: {
     backgroundColor: '#E65100',
@@ -617,6 +887,12 @@ const styles = StyleSheet.create({
   },
   periodTabTextActive: {
     color: '#FFFFFF',
+  },
+  eventDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#E65100',
   },
   content: {
     flex: 1,
@@ -636,6 +912,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#999999',
     marginTop: 8,
+    textAlign: 'center',
   },
   leaderboardRow: {
     flexDirection: 'row',
@@ -712,6 +989,127 @@ const styles = StyleSheet.create({
   bottomPadding: {
     height: 20,
   },
+
+  // Event section styles
+  eventSection: {
+    marginBottom: 24,
+  },
+  eventSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 4,
+  },
+  eventLiveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E65100',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    gap: 4,
+  },
+  eventLiveText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  eventSectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    flex: 1,
+  },
+  eventDateText: {
+    fontSize: 12,
+    color: '#999999',
+    marginBottom: 12,
+    marginLeft: 2,
+  },
+  eventJoinBtn: {
+    backgroundColor: '#E65100',
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  eventLeaveBtn: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#DDD',
+  },
+  eventJoinBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  eventLeaveBtnText: {
+    color: '#666',
+  },
+  eventJoinedHint: {
+    fontSize: 12,
+    color: '#999',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  eventEmptyState: {
+    paddingVertical: 24,
+    alignItems: 'center',
+  },
+  eventEmptyText: {
+    fontSize: 14,
+    color: '#999999',
+  },
+
+  // Past events styles
+  pastEventsSection: {
+    marginTop: 8,
+  },
+  pastEventsTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 12,
+  },
+  pastEventCard: {
+    backgroundColor: '#FAFAFA',
+    borderRadius: 12,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  pastEventHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    gap: 10,
+  },
+  pastEventInfo: {
+    flex: 1,
+  },
+  pastEventName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1A1A1A',
+  },
+  pastEventDates: {
+    fontSize: 12,
+    color: '#999999',
+    marginTop: 2,
+  },
+  pastEventLeaderboard: {
+    paddingHorizontal: 8,
+    paddingBottom: 8,
+  },
+  pastEventEmpty: {
+    fontSize: 13,
+    color: '#999999',
+    textAlign: 'center',
+    paddingVertical: 16,
+  },
+
   // Share modal styles
   shareBackdrop: {
     flex: 1,

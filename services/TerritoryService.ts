@@ -419,8 +419,8 @@ export const TerritoryService = {
         allTerritories: Territory[],
         invaderUsername?: string
     ): Promise<ConquerResult> {
-        // In event mode, skip conquering entirely — territories coexist
-        const eventMode = await EventModeService.getEventMode();
+        // In event mode (user has joined the event), skip conquering — territories coexist
+        const eventMode = await EventModeService.isUserInEventMode();
         if (eventMode) {
             AnalyticsService.trackEvent('territory_claimed', {
                 area: territory.area,

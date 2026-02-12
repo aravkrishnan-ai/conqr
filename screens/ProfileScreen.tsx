@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, TextInput, Alert, ActionSheetIOS, Platform, Switch } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, TextInput, Alert, ActionSheetIOS, Platform, Switch, Modal, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { User, Flame, Pencil, Check, X, ChevronRight, MapPin, Clock, Footprints, Bike, PersonStanding, LogOut, Map, TrendingUp, Trash2, Shield, Camera, Zap } from 'lucide-react-native';
@@ -39,6 +39,8 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
   const [isDevUser, setIsDevUser] = useState(false);
   const [eventModeEnabled, setEventModeEnabled] = useState(false);
   const [togglingEventMode, setTogglingEventMode] = useState(false);
+  const [eventNameModalVisible, setEventNameModalVisible] = useState(false);
+  const [eventNameInput, setEventNameInput] = useState('');
 
   const initialLoadComplete = React.useRef(false);
   const isFetching = React.useRef(false);
@@ -165,52 +167,65 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
     if (togglingEventMode) return;
 
     if (!newValue) {
-      // Turning OFF — warn about territory resolution
+      // Turning OFF — double confirmation (#5)
       Alert.alert(
-        'End Event Mode?',
-        'This will assign all overlapping territories to their most recent claimant and restore normal territory conquering.',
+        'End Event?',
+        'This will end the event for all participants. Territories claimed during the event will be preserved. Normal territory conquering resumes for future activities.',
         [
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'End Event',
             style: 'destructive',
-            onPress: async () => {
-              setTogglingEventMode(true);
-              const result = await EventModeService.setEventMode(false);
-              if (result.success) {
-                setEventModeEnabled(false);
-                Alert.alert('Event Mode Disabled', 'Territory conquering has been restored.');
-              } else {
-                Alert.alert('Error', result.error || 'Failed to disable event mode.');
-              }
-              setTogglingEventMode(false);
+            onPress: () => {
+              // Second confirmation
+              Alert.alert(
+                'Are you sure?',
+                'This cannot be undone. The event will be archived to past events.',
+                [
+                  { text: 'Go Back', style: 'cancel' },
+                  {
+                    text: 'Yes, End Event',
+                    style: 'destructive',
+                    onPress: async () => {
+                      setTogglingEventMode(true);
+                      const result = await EventModeService.endEvent();
+                      if (result.success) {
+                        setEventModeEnabled(false);
+                        Alert.alert('Event Ended', 'The event has been archived. Normal territory conquering is restored.');
+                      } else {
+                        Alert.alert('Error', result.error || 'Failed to end event.');
+                      }
+                      setTogglingEventMode(false);
+                    },
+                  },
+                ]
+              );
             },
           },
         ]
       );
     } else {
-      // Turning ON
-      Alert.alert(
-        'Enable Event Mode?',
-        'Territory conquering will be disabled. All users can claim territory without taking others\' land. This is for running competitive events.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Enable',
-            onPress: async () => {
-              setTogglingEventMode(true);
-              const result = await EventModeService.setEventMode(true);
-              if (result.success) {
-                setEventModeEnabled(true);
-              } else {
-                Alert.alert('Error', result.error || 'Failed to enable event mode.');
-              }
-              setTogglingEventMode(false);
-            },
-          },
-        ]
-      );
+      // Turning ON — show name input modal
+      setEventNameInput('');
+      setEventNameModalVisible(true);
     }
+  };
+
+  const handleStartEvent = async () => {
+    const name = eventNameInput.trim();
+    if (!name) {
+      Alert.alert('Event Name Required', 'Please enter a name for the event.');
+      return;
+    }
+    setEventNameModalVisible(false);
+    setTogglingEventMode(true);
+    const result = await EventModeService.startEvent(name);
+    if (result.success) {
+      setEventModeEnabled(true);
+    } else {
+      Alert.alert('Error', result.error || 'Failed to start event.');
+    }
+    setTogglingEventMode(false);
   };
 
   const startEditing = () => {
@@ -620,6 +635,52 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
       </SafeAreaView>
 
       <BottomTabBar activeTab="profile" onTabPress={handleTabPress} />
+
+      {/* Event Name Modal */}
+      <Modal
+        visible={eventNameModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEventNameModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.eventNameModalBackdrop}
+        >
+          <View style={styles.eventNameModalContainer}>
+            <Text style={styles.eventNameModalTitle}>Start Event</Text>
+            <Text style={styles.eventNameModalSubtitle}>
+              Enter a name for this event. It will appear on the leaderboard.
+            </Text>
+            <TextInput
+              style={styles.eventNameInput}
+              value={eventNameInput}
+              onChangeText={setEventNameInput}
+              placeholder="e.g. Spring Challenge 2025"
+              placeholderTextColor="#999"
+              autoFocus
+              maxLength={50}
+              returnKeyType="done"
+              onSubmitEditing={handleStartEvent}
+            />
+            <View style={styles.eventNameModalActions}>
+              <TouchableOpacity
+                style={styles.eventNameCancelBtn}
+                onPress={() => setEventNameModalVisible(false)}
+              >
+                <Text style={styles.eventNameCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.eventNameStartBtn, !eventNameInput.trim() && styles.eventNameStartBtnDisabled]}
+                onPress={handleStartEvent}
+                disabled={!eventNameInput.trim()}
+              >
+                <Text style={styles.eventNameStartText}>Start Event</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -952,5 +1013,75 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     opacity: 0.6,
+  },
+
+  // Event Name Modal
+  eventNameModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  },
+  eventNameModalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 340,
+  },
+  eventNameModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 6,
+  },
+  eventNameModalSubtitle: {
+    fontSize: 14,
+    color: '#666666',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  eventNameInput: {
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#1A1A1A',
+    backgroundColor: '#FAFAFA',
+    marginBottom: 20,
+  },
+  eventNameModalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  eventNameCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: '#F0F0F0',
+    alignItems: 'center',
+  },
+  eventNameCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#666666',
+  },
+  eventNameStartBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: '#E65100',
+    alignItems: 'center',
+  },
+  eventNameStartBtnDisabled: {
+    backgroundColor: '#CCCCCC',
+  },
+  eventNameStartText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

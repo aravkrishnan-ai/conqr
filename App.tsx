@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
 import * as Updates from 'expo-updates';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import HomeScreen from './screens/HomeScreen';
 import RecordScreen from './screens/RecordScreen';
@@ -16,6 +17,7 @@ import ActivityDetailsScreen from './screens/ActivityDetailsScreen';
 import SearchScreen from './screens/SearchScreen';
 import UserProfileScreen from './screens/UserProfileScreen';
 import PrivacyPolicyScreen from './screens/PrivacyPolicyScreen';
+import TermsOfServiceScreen from './screens/TermsOfServiceScreen';
 import LeaderboardScreen from './screens/LeaderboardScreen';
 import FriendsScreen from './screens/FriendsScreen';
 import FeedScreen from './screens/FeedScreen';
@@ -23,6 +25,8 @@ import { supabase, clearInvalidSession } from './lib/supabase';
 import { AuthService, handleAuthCallbackUrl } from './services/AuthService';
 import { AnalyticsService } from './services/AnalyticsService';
 import { AuthContext } from './contexts/AuthContext';
+
+const TOS_ACCEPTED_KEY = 'conqr_tos_accepted_v1';
 
 const Stack = createNativeStackNavigator();
 
@@ -77,6 +81,7 @@ function AppNavigator() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [hasProfile, setHasProfile] = useState(false);
+  const [hasAcceptedTOS, setHasAcceptedTOS] = useState(false);
   const [suggestedUsername, setSuggestedUsername] = useState('');
   const [userAvatarUrl, setUserAvatarUrl] = useState<string | null>(null);
   const initDoneRef = useRef(false);
@@ -111,6 +116,12 @@ function AppNavigator() {
     const init = async () => {
       try {
         await clearInvalidSession();
+
+        // Check TOS acceptance from local storage
+        try {
+          const tosAccepted = await AsyncStorage.getItem(TOS_ACCEPTED_KEY);
+          setHasAcceptedTOS(tosAccepted === 'true');
+        } catch { /* default to false */ }
 
         const initialUrl = await Linking.getInitialURL();
         if (initialUrl && initialUrl.includes('access_token')) {
@@ -184,6 +195,13 @@ function AppNavigator() {
     };
   }, []);
 
+  const handleAcceptTOS = async () => {
+    try {
+      await AsyncStorage.setItem(TOS_ACCEPTED_KEY, 'true');
+    } catch { /* proceed anyway */ }
+    setHasAcceptedTOS(true);
+  };
+
   if (isLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' }}>
@@ -202,6 +220,10 @@ function AppNavigator() {
       >
         {!isAuthenticated ? (
           <Stack.Screen name="Landing" component={LandingScreen} />
+        ) : !hasAcceptedTOS ? (
+          <Stack.Screen name="TermsOfService">
+            {() => <TermsOfServiceScreen onAccept={handleAcceptTOS} />}
+          </Stack.Screen>
         ) : !hasProfile ? (
           <Stack.Screen name="ProfileSetup" component={ProfileSetupScreen} />
         ) : (
