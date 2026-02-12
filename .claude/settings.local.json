@@ -125,7 +125,32 @@
       "Bash(ACCESS_TOKEN=\"sbp_92967b5514cdea3cafb2400a95f2c8e2c22f6f60\")",
       "Bash(__NEW_LINE_98f974ffb11d92ce__ node -e \"\nconst https = require\\(''https''\\);\nconst sql = \"\"SELECT proname, prosecdef FROM pg_proc WHERE proname IN \\(''conquer_territory'', ''validate_territory''\\) ORDER BY proname;\"\";\nconst body = JSON.stringify\\({ query: sql }\\);\nconst opts = {\n  hostname: ''api.supabase.com'',\n  path: ''/v1/projects/$PROJECT_REF/database/query'',\n  method: ''POST'',\n  headers: {\n    ''Authorization'': ''Bearer $ACCESS_TOKEN'',\n    ''Content-Type'': ''application/json'',\n    ''Content-Length'': Buffer.byteLength\\(body\\),\n  }\n};\nconst req = https.request\\(opts, res => {\n  let data = '''';\n  res.on\\(''data'', c => data += c\\);\n  res.on\\(''end'', \\(\\) => console.log\\(data\\)\\);\n}\\);\nreq.write\\(body\\);\nreq.end\\(\\);\n\")",
       "Bash(__NEW_LINE_cc8ee7bf5f1c6229__ node -e \"\nconst https = require\\(''https''\\);\nconst sql = \"\"SELECT tgname, tgtype FROM pg_trigger WHERE tgname = ''trigger_validate_territory'';\"\";\nconst body = JSON.stringify\\({ query: sql }\\);\nconst opts = {\n  hostname: ''api.supabase.com'',\n  path: ''/v1/projects/$PROJECT_REF/database/query'',\n  method: ''POST'',\n  headers: {\n    ''Authorization'': ''Bearer $ACCESS_TOKEN'',\n    ''Content-Type'': ''application/json'',\n    ''Content-Length'': Buffer.byteLength\\(body\\),\n  }\n};\nconst req = https.request\\(opts, res => {\n  let data = '''';\n  res.on\\(''data'', c => data += c\\);\n  res.on\\(''end'', \\(\\) => console.log\\(data\\)\\);\n}\\);\nreq.write\\(body\\);\nreq.end\\(\\);\n\")",
-      "Bash(EXPO_TOKEN=r1gxl_gnnqnFku3XNoTrT3lIkl4KqqkvtNKQeyEB npx eas whoami:*)"
+      "Bash(EXPO_TOKEN=r1gxl_gnnqnFku3XNoTrT3lIkl4KqqkvtNKQeyEB npx eas whoami:*)",
+      "WebFetch(domain:justuseapp.com)",
+      "WebFetch(domain:sportssteps.com)",
+      "WebFetch(domain:apps.apple.com)",
+      "WebFetch(domain:www.intvl.com.au)",
+      "WebFetch(domain:play.google.com)",
+      "WebFetch(domain:www.appbrain.com)",
+      "WebFetch(domain:growth.design)",
+      "WebFetch(domain:www.t3.com)",
+      "WebFetch(domain:builtformars.com)",
+      "WebFetch(domain:velo.outsideonline.com)",
+      "WebFetch(domain:uxdesign.cc)",
+      "WebFetch(domain:communityhub.strava.com)",
+      "WebFetch(domain:kimola.com)",
+      "WebFetch(domain:stories.strava.com)",
+      "WebFetch(domain:press.strava.com)",
+      "WebFetch(domain:www.designrush.com)",
+      "WebFetch(domain:griffdesigns.com)",
+      "WebFetch(domain:www.lyssna.com)",
+      "WebFetch(domain:mobbin.com)",
+      "WebFetch(domain:www.bikeradar.com)",
+      "WebFetch(domain:sensatype.com)",
+      "WebFetch(domain:stormotion.io)",
+      "WebFetch(domain:ixd.prattsi.org)",
+      "Bash(git remote set-url:*)",
+      "Bash(EXPO_TOKEN=r1gxl_gnnqnFku3XNoTrT3lIkl4KqqkvtNKQeyEB npx eas channel:list:*)"
     ]
   }
 }
