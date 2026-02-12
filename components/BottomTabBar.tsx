@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Home, User, UserPlus, Trophy, Newspaper } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 
 type TabName = 'home' | 'record' | 'profile' | 'friends' | 'leaderboard' | 'feed';
 
@@ -12,11 +13,15 @@ interface BottomTabBarProps {
 
 export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const handlePress = (tab: TabName) => {
+    if (Platform.OS !== 'web') Haptics.selectionAsync();
+    onTabPress(tab);
+  };
   return (
     <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 10) }]}>
       <TouchableOpacity
         style={styles.tab}
-        onPress={() => onTabPress('home')}
+        onPress={() => handlePress('home')}
         activeOpacity={0.7}
       >
         <Home
@@ -28,7 +33,7 @@ export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProp
 
       <TouchableOpacity
         style={styles.tab}
-        onPress={() => onTabPress('feed')}
+        onPress={() => handlePress('feed')}
         activeOpacity={0.7}
       >
         <Newspaper
@@ -40,7 +45,7 @@ export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProp
 
       <TouchableOpacity
         style={styles.recordTab}
-        onPress={() => onTabPress('record')}
+        onPress={() => handlePress('record')}
         activeOpacity={0.8}
       >
         <View style={[
@@ -53,7 +58,7 @@ export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProp
 
       <TouchableOpacity
         style={styles.tab}
-        onPress={() => onTabPress('leaderboard')}
+        onPress={() => handlePress('leaderboard')}
         activeOpacity={0.7}
       >
         <Trophy
@@ -65,7 +70,7 @@ export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProp
 
       <TouchableOpacity
         style={styles.tab}
-        onPress={() => onTabPress('friends')}
+        onPress={() => handlePress('friends')}
         activeOpacity={0.7}
       >
         <UserPlus
@@ -77,7 +82,7 @@ export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProp
 
       <TouchableOpacity
         style={styles.tab}
-        onPress={() => onTabPress('profile')}
+        onPress={() => handlePress('profile')}
         activeOpacity={0.7}
       >
         <User

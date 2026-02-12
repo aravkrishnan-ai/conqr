@@ -17,6 +17,9 @@ import { supabase } from '../lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import { useScreenTracking } from '../lib/useScreenTracking';
 import { AnalyticsService } from '../services/AnalyticsService';
+import * as Haptics from 'expo-haptics';
+import { getDistance } from 'geolib';
+import { Crosshair } from 'lucide-react-native';
 
 interface RecordScreenProps {
   navigation: any;
@@ -55,6 +58,8 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
     conquered?: string;
     message?: string;
   }>({ visible: false, title: '', distance: '', duration: '', pace: '' });
+
+  const [distanceToStart, setDistanceToStart] = React.useState<number | null>(null);
 
   const mapRef = React.useRef<MapContainerHandle>(null);
   const timerRef = React.useRef<NodeJS.Timeout | null>(null);
@@ -149,6 +154,21 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
             setCurrentSpeed(recentSpeeds.reduce((a, b) => a + b, 0) / recentSpeeds.length);
           }
         }
+
+        // Distance to start for loop closure indicator
+        if (storePath.length >= 2) {
+          const start = storePath[0];
+          const end = storePath[storePath.length - 1];
+          try {
+            const d = getDistance(
+              { latitude: start.lat, longitude: start.lng },
+              { latitude: end.lat, longitude: end.lng }
+            );
+            setDistanceToStart(d);
+          } catch { setDistanceToStart(null); }
+        } else {
+          setDistanceToStart(null);
+        }
       };
 
       updateStats();
@@ -170,6 +190,10 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
     }
 
     if (isSaving) return;
+
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
 
     if (isTracking) {
       // Stop tracking — get final accumulated state from the store
@@ -383,6 +407,33 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
               territories={savedTerritories}
               style={styles.map}
             />
+            {locationError && (
+              <View style={styles.locationErrorBanner}>
+                <Text style={styles.locationErrorText}>{locationError}</Text>
+              </View>
+            )}
+            {isTracking && distanceToStart !== null && (
+              <View style={[
+                styles.distanceToStartPill,
+                distanceToStart <= 200 && styles.distanceToStartClose,
+              ]}>
+                <Text style={[
+                  styles.distanceToStartText,
+                  distanceToStart <= 200 && styles.distanceToStartTextClose,
+                ]}>
+                  {distanceToStart <= 200
+                    ? `${distanceToStart}m — close loop!`
+                    : `${distanceToStart}m from start`}
+                </Text>
+              </View>
+            )}
+            <TouchableOpacity
+              style={styles.recenterButton}
+              onPress={() => mapRef.current?.centerOnUser()}
+              activeOpacity={0.7}
+            >
+              <Crosshair color="#FFFFFF" size={20} />
+            </TouchableOpacity>
             <View style={styles.mapDivider} />
           </View>
 
@@ -602,6 +653,57 @@ const styles = StyleSheet.create({
     marginHorizontal: 60,
     borderRadius: 2,
     marginTop: 8,
+  },
+  locationErrorBanner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FF3B30',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  locationErrorText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  distanceToStartPill: {
+    position: 'absolute',
+    top: 12,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+  },
+  distanceToStartClose: {
+    backgroundColor: '#10B981',
+  },
+  distanceToStartText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  distanceToStartTextClose: {
+    color: '#FFFFFF',
+  },
+  recenterButton: {
+    position: 'absolute',
+    bottom: 16,
+    right: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E65100',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
   },
   statsContainer: {
     paddingVertical: 24,

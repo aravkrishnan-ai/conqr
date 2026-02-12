@@ -1,9 +1,9 @@
 import * as React from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, ActivityIndicator, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect } from '@react-navigation/native';
-import { Swords, ShieldAlert, X, User, UserPlus, MapPin, Check, Zap } from 'lucide-react-native';
+import { Swords, ShieldAlert, X, User, UserPlus, MapPin, Check, Zap, Crosshair } from 'lucide-react-native';
 import MapContainer, { MapContainerHandle } from '../components/MapContainer';
 import BottomTabBar from '../components/BottomTabBar';
 import { Territory, GPSPoint, TerritoryInvasion } from '../lib/types';
@@ -31,6 +31,7 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
   const [territories, setTerritories] = React.useState<Territory[]>([]);
   const [currentUserId, setCurrentUserId] = React.useState<string | undefined>(undefined);
   const [eventModeActive, setEventModeActive] = React.useState(false);
+  const [locationError, setLocationError] = React.useState<string | null>(null);
   const mapRef = React.useRef<MapContainerHandle>(null);
 
   // Invasion modal state
@@ -158,11 +159,12 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
         unsubscribe = await LocationService.startTracking(
           (point) => {
             if (mounted) {
+              setLocationError(null);
               setLocation(point);
             }
           },
           (error) => {
-            console.error('Location error:', error);
+            if (mounted) setLocationError(error?.message || 'Location unavailable');
           }
         );
       } catch (err) {
@@ -297,6 +299,18 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
             style={styles.map}
             onTerritoryPress={handleTerritoryPress}
           />
+          {locationError && (
+            <View style={styles.locationErrorBanner}>
+              <Text style={styles.locationErrorText}>{locationError}</Text>
+            </View>
+          )}
+          <TouchableOpacity
+            style={styles.recenterButton}
+            onPress={() => mapRef.current?.centerOnUser()}
+            activeOpacity={0.7}
+          >
+            <Crosshair color="#FFFFFF" size={20} />
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
       <BottomTabBar activeTab="home" onTabPress={handleTabPress} />
@@ -484,6 +498,37 @@ const styles = StyleSheet.create({
   },
   map: {
     flex: 1,
+  },
+  locationErrorBanner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FF3B30',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  locationErrorText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  recenterButton: {
+    position: 'absolute',
+    bottom: 16,
+    right: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#E65100',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
   },
 
   // Territory popup

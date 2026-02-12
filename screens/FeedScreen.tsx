@@ -4,6 +4,7 @@ import {
   ActivityIndicator, Image, TextInput, RefreshControl,
   Modal, Alert, KeyboardAvoidingView, Platform, Dimensions
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -143,6 +144,7 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
   };
 
   const handleLike = async (postId: string, isLiked: boolean) => {
+    if (Platform.OS !== 'web') Haptics.selectionAsync();
     setActionLoading(postId);
     try {
       if (isLiked) {
