@@ -282,10 +282,11 @@ const MAP_HTML = `
 
                     var poly = L.polygon(t.polygon, {
                         color: color,
-                        weight: 2,
-                        opacity: 0.8,
+                        weight: isOwn ? 3 : 1.5,
+                        opacity: isOwn ? 1 : 0.6,
                         fillColor: color,
-                        fillOpacity: isOwn ? 0.25 : 0.2
+                        fillOpacity: isOwn ? 0.3 : 0.15,
+                        dashArray: isOwn ? null : '4 2'
                     }).addTo(map);
 
                     poly.on('click', function() {

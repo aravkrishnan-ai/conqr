@@ -1,40 +1,54 @@
 import { supabase } from '../lib/supabase';
-import { Territory } from '../lib/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const DEV_EMAIL = 'arav_krishnan@ug29.mesaschool.co';
 const EVENT_JOINED_KEY = 'conqr_joined_event_id';
 const MAX_PAST_EVENTS = 20;
 
-// Cache event mode — short TTL so changes propagate quickly (#4)
+// ── Caches ────────────────────────────────────────────────────────────────────
 let cachedEventMode: boolean | null = null;
 let cacheTimestamp = 0;
-const CACHE_TTL_MS = 30_000; // 30 seconds (was 5 min)
+const CACHE_TTL_MS = 30_000; // 30 seconds
 
 export interface EventInfo {
     id: string;
     name: string;
-    startedAt: string; // ISO timestamp
-    endedAt?: string;  // ISO timestamp
-    participants?: string[]; // user IDs who joined (#6)
+    startedAt: string;
+    endedAt?: string;
+    /** @deprecated Use getEventParticipants() — kept for backward compat with past events */
+    participants?: string[];
 }
 
-// Cache for current event info
 let cachedCurrentEvent: EventInfo | null | undefined = undefined;
 let eventInfoCacheTimestamp = 0;
-const EVENT_INFO_CACHE_TTL_MS = 30_000; // 30 seconds (was 1 min)
+const EVENT_INFO_CACHE_TTL_MS = 30_000;
+
+// Participant cache — refreshed from server
+let cachedParticipants: string[] | null = null;
+let participantsCacheTimestamp = 0;
+const PARTICIPANTS_CACHE_TTL_MS = 15_000; // 15 seconds
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Build the app_settings key for a participant row */
+function participantKey(eventId: string, userId: string): string {
+    return `event_join:${eventId}:${userId}`;
+}
+
+/** Build the prefix for querying all participant rows for an event */
+function participantPrefix(eventId: string): string {
+    return `event_join:${eventId}:`;
+}
+
+// ── Service ───────────────────────────────────────────────────────────────────
 
 export const EventModeService = {
-    /**
-     * Check if the current user is the dev (Arav Krishnan).
-     */
     isDevUser(email: string | undefined | null): boolean {
         return !!email && email.toLowerCase() === DEV_EMAIL.toLowerCase();
     },
 
-    /**
-     * Fetch current event mode state from the database.
-     */
+    // ── Event mode flag ───────────────────────────────────────────────────
+
     async getEventMode(): Promise<boolean> {
         const now = Date.now();
         if (cachedEventMode !== null && (now - cacheTimestamp) < CACHE_TTL_MS) {
@@ -49,7 +63,6 @@ export const EventModeService = {
                 .single();
 
             if (error || !data) {
-                console.error('Failed to fetch event mode:', error);
                 return cachedEventMode ?? false;
             }
 
@@ -63,9 +76,28 @@ export const EventModeService = {
         }
     },
 
-    /**
-     * Get the current active event info (name, start time, participants).
-     */
+    async setEventMode(enabled: boolean): Promise<{ success: boolean; error?: string }> {
+        try {
+            const { error } = await supabase.rpc('toggle_event_mode', {
+                p_enabled: enabled,
+            });
+
+            if (error) {
+                console.error('Failed to toggle event mode:', error);
+                return { success: false, error: error.message };
+            }
+
+            cachedEventMode = enabled;
+            cacheTimestamp = Date.now();
+            return { success: true };
+        } catch (err: any) {
+            console.error('Event mode toggle error:', err);
+            return { success: false, error: err?.message || 'Unknown error' };
+        }
+    },
+
+    // ── Current event info ────────────────────────────────────────────────
+
     async getCurrentEvent(): Promise<EventInfo | null> {
         const now = Date.now();
         if (cachedCurrentEvent !== undefined && (now - eventInfoCacheTimestamp) < EVENT_INFO_CACHE_TTL_MS) {
@@ -95,9 +127,6 @@ export const EventModeService = {
         }
     },
 
-    /**
-     * Get list of past completed events.
-     */
     async getPastEvents(): Promise<EventInfo[]> {
         try {
             const { data, error } = await supabase
@@ -108,120 +137,95 @@ export const EventModeService = {
 
             if (error || !data?.value) return [];
             const events = Array.isArray(data.value) ? data.value : [];
-            return events.slice(0, MAX_PAST_EVENTS); // #9 cap
+            return events.slice(0, MAX_PAST_EVENTS);
         } catch (err) {
             console.error('Failed to fetch past events:', err);
             return [];
         }
     },
 
+    // ── Participant tracking (separate rows — no race conditions) ─────────
+
     /**
-     * Start a new event with a name. Only callable by the dev user.
-     * Enables event mode and stores event metadata.
+     * Get all participant user IDs for an event.
+     * Each participant is stored as a separate row: key = "event_join:{eventId}:{userId}"
+     * This avoids read-modify-write races when 100+ users join simultaneously.
      */
-    async startEvent(name: string): Promise<{ success: boolean; error?: string }> {
-        // First toggle event mode on
-        const toggleResult = await this.setEventMode(true);
-        if (!toggleResult.success) return toggleResult;
+    async getEventParticipants(eventId: string): Promise<string[]> {
+        const now = Date.now();
+        if (cachedParticipants !== null && (now - participantsCacheTimestamp) < PARTICIPANTS_CACHE_TTL_MS) {
+            return cachedParticipants;
+        }
 
         try {
-            const eventInfo: EventInfo = {
-                id: Date.now().toString(),
-                name: name.trim(),
-                startedAt: new Date().toISOString(),
-                participants: [], // #6 — start with empty participants
-            };
-
-            await supabase
+            const prefix = participantPrefix(eventId);
+            const { data, error } = await supabase
                 .from('app_settings')
-                .upsert({ key: 'current_event', value: eventInfo });
+                .select('key')
+                .like('key', `${prefix}%`);
 
-            cachedCurrentEvent = eventInfo;
-            eventInfoCacheTimestamp = Date.now();
-        } catch (err) {
-            console.error('Failed to save event info:', err);
-        }
-
-        return { success: true };
-    },
-
-    /**
-     * End the current event. Archives it to past events.
-     * Territories from the event coexist — normal conquering resumes for future activities. (#3)
-     */
-    async endEvent(): Promise<{ success: boolean; error?: string }> {
-        // Capture current event data before ending
-        let currentEvent: EventInfo | null = null;
-        try {
-            // Force fresh fetch to get latest participants
-            this.clearCache();
-            currentEvent = await this.getCurrentEvent();
-        } catch (err) {
-            console.error('Failed to get current event for archival:', err);
-        }
-
-        // Toggle event mode off (no heavy resolution — #3)
-        const toggleResult = await this.setEventMode(false);
-        if (!toggleResult.success) return toggleResult;
-
-        // Clear joined state locally
-        await this.leaveEvent();
-
-        // Archive the event to past events
-        try {
-            if (currentEvent) {
-                currentEvent.endedAt = new Date().toISOString();
-                const pastEvents = await this.getPastEvents();
-                pastEvents.unshift(currentEvent);
-                // #9 — cap past events list
-                const capped = pastEvents.slice(0, MAX_PAST_EVENTS);
-                await supabase
-                    .from('app_settings')
-                    .upsert({ key: 'past_events', value: capped });
-            }
-            // Clear current event
-            await supabase
-                .from('app_settings')
-                .upsert({ key: 'current_event', value: null });
-
-            cachedCurrentEvent = null;
-            eventInfoCacheTimestamp = Date.now();
-        } catch (err) {
-            console.error('Failed to archive event:', err);
-        }
-
-        return { success: true };
-    },
-
-    /**
-     * Toggle event mode on or off. Only callable by the dev user.
-     * No longer runs heavy client-side territory resolution on disable. (#3)
-     */
-    async setEventMode(enabled: boolean): Promise<{ success: boolean; error?: string }> {
-        try {
-            const { data, error } = await supabase.rpc('toggle_event_mode', {
-                p_enabled: enabled,
-            });
-
-            if (error) {
-                console.error('Failed to toggle event mode:', error);
-                return { success: false, error: error.message };
+            if (error || !data) {
+                return cachedParticipants ?? [];
             }
 
-            // Update cache immediately
-            cachedEventMode = enabled;
-            cacheTimestamp = Date.now();
-
-            return { success: true };
-        } catch (err: any) {
-            console.error('Event mode toggle error:', err);
-            return { success: false, error: err?.message || 'Unknown error' };
+            const ids = data.map(row => row.key.slice(prefix.length));
+            cachedParticipants = ids;
+            participantsCacheTimestamp = now;
+            return ids;
+        } catch (err) {
+            console.error('Failed to fetch event participants:', err);
+            return cachedParticipants ?? [];
         }
     },
 
     /**
-     * Check if the current user has joined the active event.
+     * Join the current event. Writes a single row — safe for concurrent joins.
      */
+    async joinEvent(userId: string): Promise<boolean> {
+        try {
+            const currentEvent = await this.getCurrentEvent();
+            if (!currentEvent) return false;
+
+            // Store locally for fast check during territory claiming
+            await AsyncStorage.setItem(EVENT_JOINED_KEY, currentEvent.id);
+
+            // Write a dedicated row on the server (idempotent upsert, no race condition)
+            await supabase
+                .from('app_settings')
+                .upsert({ key: participantKey(currentEvent.id, userId), value: true });
+
+            // Invalidate participant cache
+            cachedParticipants = null;
+            participantsCacheTimestamp = 0;
+
+            return true;
+        } catch (err) {
+            console.error('Failed to join event:', err);
+            return false;
+        }
+    },
+
+    /**
+     * Leave the current event.
+     */
+    async leaveEvent(userId?: string): Promise<void> {
+        try {
+            await AsyncStorage.removeItem(EVENT_JOINED_KEY);
+
+            if (userId) {
+                const currentEvent = await this.getCurrentEvent();
+                if (currentEvent) {
+                    await supabase
+                        .from('app_settings')
+                        .delete()
+                        .eq('key', participantKey(currentEvent.id, userId));
+                }
+                cachedParticipants = null;
+                participantsCacheTimestamp = 0;
+            }
+        } catch { /* ignore */ }
+    },
+
     async hasJoinedCurrentEvent(): Promise<boolean> {
         try {
             const currentEvent = await this.getCurrentEvent();
@@ -234,70 +238,7 @@ export const EventModeService = {
     },
 
     /**
-     * Join the current active event. Stores locally and registers on server. (#6)
-     */
-    async joinEvent(userId: string): Promise<boolean> {
-        try {
-            const currentEvent = await this.getCurrentEvent();
-            if (!currentEvent) return false;
-
-            // Store locally
-            await AsyncStorage.setItem(EVENT_JOINED_KEY, currentEvent.id);
-
-            // Register on server — add user ID to participants
-            try {
-                const participants = currentEvent.participants || [];
-                if (!participants.includes(userId)) {
-                    participants.push(userId);
-                    const updated = { ...currentEvent, participants };
-                    await supabase
-                        .from('app_settings')
-                        .upsert({ key: 'current_event', value: updated });
-                    cachedCurrentEvent = updated;
-                    eventInfoCacheTimestamp = Date.now();
-                }
-            } catch (err) {
-                console.error('Failed to register participant on server:', err);
-                // Still return true — local join succeeded
-            }
-
-            return true;
-        } catch {
-            return false;
-        }
-    },
-
-    /**
-     * Leave the current event. Removes locally and from server. (#6)
-     */
-    async leaveEvent(userId?: string): Promise<void> {
-        try {
-            await AsyncStorage.removeItem(EVENT_JOINED_KEY);
-
-            // Remove from server if userId provided
-            if (userId) {
-                try {
-                    const currentEvent = await this.getCurrentEvent();
-                    if (currentEvent?.participants) {
-                        const updated = {
-                            ...currentEvent,
-                            participants: currentEvent.participants.filter(id => id !== userId),
-                        };
-                        await supabase
-                            .from('app_settings')
-                            .upsert({ key: 'current_event', value: updated });
-                        cachedCurrentEvent = updated;
-                        eventInfoCacheTimestamp = Date.now();
-                    }
-                } catch (err) {
-                    console.error('Failed to remove participant from server:', err);
-                }
-            }
-        } catch { /* ignore */ }
-    },
-
-    /**
-     * Check if the current user is in event mode (event is active AND user has joined).
+     * Check if the current user is in event mode (event active AND user joined).
      */
     async isUserInEventMode(): Promise<boolean> {
         const eventMode = await this.getEventMode();
@@ -305,13 +246,122 @@ export const EventModeService = {
         return this.hasJoinedCurrentEvent();
     },
 
+    // ── Event lifecycle ───────────────────────────────────────────────────
+
+    async startEvent(name: string): Promise<{ success: boolean; error?: string }> {
+        const toggleResult = await this.setEventMode(true);
+        if (!toggleResult.success) return toggleResult;
+
+        try {
+            const eventInfo: EventInfo = {
+                id: Date.now().toString(),
+                name: name.trim(),
+                startedAt: new Date().toISOString(),
+            };
+
+            await supabase
+                .from('app_settings')
+                .upsert({ key: 'current_event', value: eventInfo });
+
+            cachedCurrentEvent = eventInfo;
+            eventInfoCacheTimestamp = Date.now();
+            cachedParticipants = [];
+            participantsCacheTimestamp = Date.now();
+        } catch (err) {
+            console.error('Failed to save event info:', err);
+        }
+
+        return { success: true };
+    },
+
+    async endEvent(): Promise<{ success: boolean; error?: string }> {
+        let currentEvent: EventInfo | null = null;
+        try {
+            this.clearCache();
+            currentEvent = await this.getCurrentEvent();
+        } catch (err) {
+            console.error('Failed to get current event for archival:', err);
+        }
+
+        const toggleResult = await this.setEventMode(false);
+        if (!toggleResult.success) return toggleResult;
+
+        await this.leaveEvent();
+
+        // Archive event with final participant list
+        try {
+            if (currentEvent) {
+                // Fetch final participant count for the archived record
+                const finalParticipants = await this.getEventParticipants(currentEvent.id);
+                currentEvent.endedAt = new Date().toISOString();
+                currentEvent.participants = finalParticipants;
+
+                const pastEvents = await this.getPastEvents();
+                pastEvents.unshift(currentEvent);
+                const capped = pastEvents.slice(0, MAX_PAST_EVENTS);
+                await supabase
+                    .from('app_settings')
+                    .upsert({ key: 'past_events', value: capped });
+
+                // Clean up participant rows for this event (fire-and-forget)
+                this.cleanupEventParticipants(currentEvent.id).catch(err => {
+                    console.error('Failed to cleanup event participant rows:', err);
+                });
+            }
+
+            await supabase
+                .from('app_settings')
+                .upsert({ key: 'current_event', value: null });
+
+            cachedCurrentEvent = null;
+            eventInfoCacheTimestamp = Date.now();
+            cachedParticipants = null;
+            participantsCacheTimestamp = 0;
+        } catch (err) {
+            console.error('Failed to archive event:', err);
+        }
+
+        return { success: true };
+    },
+
     /**
-     * Invalidate all cached state. Call when starting/stopping tracking. (#4)
+     * Remove all event_join:* rows for a finished event.
+     * Non-blocking — called fire-and-forget after archival.
      */
+    async cleanupEventParticipants(eventId: string): Promise<void> {
+        try {
+            const prefix = participantPrefix(eventId);
+            // Fetch all keys first then delete them in batch
+            const { data } = await supabase
+                .from('app_settings')
+                .select('key')
+                .like('key', `${prefix}%`);
+
+            if (data && data.length > 0) {
+                const keys = data.map(r => r.key);
+                // Delete in batches of 50 to avoid oversized queries
+                for (let i = 0; i < keys.length; i += 50) {
+                    const batch = keys.slice(i, i + 50);
+                    await supabase
+                        .from('app_settings')
+                        .delete()
+                        .in('key', batch);
+                }
+                console.log(`Cleaned up ${keys.length} participant rows for event ${eventId}`);
+            }
+        } catch (err) {
+            console.error('Event participant cleanup error:', err);
+        }
+    },
+
+    // ── Cache management ──────────────────────────────────────────────────
+
     clearCache(): void {
         cachedEventMode = null;
         cacheTimestamp = 0;
         cachedCurrentEvent = undefined;
         eventInfoCacheTimestamp = 0;
+        cachedParticipants = null;
+        participantsCacheTimestamp = 0;
     },
 };

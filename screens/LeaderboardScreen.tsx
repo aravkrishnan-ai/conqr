@@ -139,6 +139,7 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
   const [loadingPastEvent, setLoadingPastEvent] = useState(false);
   const [hasJoinedEvent, setHasJoinedEvent] = useState(false);
   const [joiningEvent, setJoiningEvent] = useState(false);
+  const [eventParticipantCount, setEventParticipantCount] = useState(0);
   // Cache all territories for event leaderboard building
   const allTerritoriesRef = useRef<{ ownerId: string; ownerName?: string; area: number; claimedAt: number }[]>([]);
 
@@ -197,13 +198,16 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
         // Build current event leaderboard — only count territories from participants (#2)
         if (currentEvt) {
           const startTime = new Date(currentEvt.startedAt).getTime();
-          const participants = currentEvt.participants || [];
+          // Fetch participants from separate rows (scales to 100+ users without race conditions)
+          const participants = await EventModeService.getEventParticipants(currentEvt.id);
+          setEventParticipantCount(participants.length);
           const eventTerritories = allTerritoriesRef.current.filter(t =>
             t.claimedAt >= startTime && (participants.length === 0 || participants.includes(t.ownerId))
           );
           setEventLeaderboard(buildLeaderboardFromTerritories(eventTerritories));
         } else {
           setEventLeaderboard([]);
+          setEventParticipantCount(0);
         }
       } else {
         // Regular period-based leaderboard
@@ -531,8 +535,8 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
             </View>
             <Text style={styles.eventDateText}>
               Started {formatEventDate(currentEvent.startedAt)}
-              {currentEvent.participants && currentEvent.participants.length > 0
-                ? ` \u00B7 ${currentEvent.participants.length} participant${currentEvent.participants.length === 1 ? '' : 's'}`
+              {eventParticipantCount > 0
+                ? ` \u00B7 ${eventParticipantCount} participant${eventParticipantCount === 1 ? '' : 's'}`
                 : ''}
             </Text>
 
@@ -807,7 +811,7 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F7F7F7',
   },
   center: {
     justifyContent: 'center',
@@ -815,12 +819,13 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 14,
+    paddingVertical: 16,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
@@ -870,18 +875,23 @@ const styles = StyleSheet.create({
   },
   periodTab: {
     paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     borderRadius: 20,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#F0EDE8',
     alignItems: 'center',
     flexDirection: 'row',
     gap: 6,
   },
   periodTabActive: {
     backgroundColor: '#E65100',
+    shadowColor: '#E65100',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
   },
   periodTabText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     color: '#666666',
   },
@@ -918,21 +928,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    marginBottom: 6,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    marginBottom: 10,
     backgroundColor: '#FAFAFA',
   },
   topThreeRow: {
     backgroundColor: '#FFF8F0',
+    shadowColor: '#E65100',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 1,
   },
   currentUserRow: {
-    backgroundColor: 'rgba(230, 81, 0, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(230, 81, 0, 0.2)',
+    backgroundColor: 'rgba(230, 81, 0, 0.06)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(230, 81, 0, 0.25)',
+    borderLeftWidth: 4,
+    borderLeftColor: '#E65100',
   },
   rankBadge: {
-    width: 32,
+    width: 34,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
@@ -940,21 +957,21 @@ const styles = StyleSheet.create({
   rankNumber: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#999999',
+    color: '#AAAAAA',
   },
   userAvatar: {
     marginRight: 12,
   },
   avatarImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
   },
   avatarPlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(230, 81, 0, 0.1)',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(230, 81, 0, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -969,6 +986,7 @@ const styles = StyleSheet.create({
   },
   currentUserText: {
     color: '#E65100',
+    fontWeight: '700',
   },
   territoryCount: {
     fontSize: 12,
@@ -979,12 +997,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   areaValue: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     color: '#1A1A1A',
   },
   topThreeArea: {
     color: '#E65100',
+    fontSize: 16,
   },
   bottomPadding: {
     height: 20,

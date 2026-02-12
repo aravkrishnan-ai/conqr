@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Home, User, UserPlus, Trophy, Newspaper } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -11,37 +11,47 @@ interface BottomTabBarProps {
   onTabPress: (tab: TabName) => void;
 }
 
+const TAB_LABELS: Record<TabName, string> = {
+  home: 'Map',
+  feed: 'Feed',
+  record: '',
+  leaderboard: 'Ranks',
+  friends: 'Friends',
+  profile: 'Profile',
+};
+
 export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const handlePress = (tab: TabName) => {
     if (Platform.OS !== 'web') Haptics.selectionAsync();
     onTabPress(tab);
   };
+
+  const renderTab = (tab: TabName, Icon: any) => {
+    const isActive = activeTab === tab;
+    return (
+      <TouchableOpacity
+        key={tab}
+        style={styles.tab}
+        onPress={() => handlePress(tab)}
+        activeOpacity={0.7}
+      >
+        <Icon
+          size={24}
+          color={isActive ? '#E65100' : '#999999'}
+          strokeWidth={isActive ? 2.5 : 1.8}
+        />
+        <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
+          {TAB_LABELS[tab]}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-      <TouchableOpacity
-        style={styles.tab}
-        onPress={() => handlePress('home')}
-        activeOpacity={0.7}
-      >
-        <Home
-          size={24}
-          color={activeTab === 'home' ? '#E65100' : '#666666'}
-          strokeWidth={activeTab === 'home' ? 2.5 : 2}
-        />
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.tab}
-        onPress={() => handlePress('feed')}
-        activeOpacity={0.7}
-      >
-        <Newspaper
-          size={24}
-          color={activeTab === 'feed' ? '#E65100' : '#666666'}
-          strokeWidth={activeTab === 'feed' ? 2.5 : 2}
-        />
-      </TouchableOpacity>
+      {renderTab('home', Home)}
+      {renderTab('feed', Newspaper)}
 
       <TouchableOpacity
         style={styles.recordTab}
@@ -56,41 +66,9 @@ export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProp
         </View>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.tab}
-        onPress={() => handlePress('leaderboard')}
-        activeOpacity={0.7}
-      >
-        <Trophy
-          size={24}
-          color={activeTab === 'leaderboard' ? '#E65100' : '#666666'}
-          strokeWidth={activeTab === 'leaderboard' ? 2.5 : 2}
-        />
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.tab}
-        onPress={() => handlePress('friends')}
-        activeOpacity={0.7}
-      >
-        <UserPlus
-          size={24}
-          color={activeTab === 'friends' ? '#E65100' : '#666666'}
-          strokeWidth={activeTab === 'friends' ? 2.5 : 2}
-        />
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.tab}
-        onPress={() => handlePress('profile')}
-        activeOpacity={0.7}
-      >
-        <User
-          size={24}
-          color={activeTab === 'profile' ? '#E65100' : '#666666'}
-          strokeWidth={activeTab === 'profile' ? 2.5 : 2}
-        />
-      </TouchableOpacity>
+      {renderTab('leaderboard', Trophy)}
+      {renderTab('friends', UserPlus)}
+      {renderTab('profile', User)}
     </View>
   );
 }
@@ -101,7 +79,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#E5E5E5',
-    paddingTop: 10,
+    paddingTop: 8,
     alignItems: 'center',
     justifyContent: 'space-around',
   },
@@ -109,7 +87,17 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingVertical: 4,
+  },
+  tabLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#999999',
+    marginTop: 4,
+  },
+  tabLabelActive: {
+    color: '#E65100',
+    fontWeight: '600',
   },
   recordTab: {
     flex: 1,
@@ -125,16 +113,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     shadowColor: '#FF3B30',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 8,
+    marginBottom: 4,
   },
   recordButtonActive: {
     backgroundColor: '#CC2F26',
   },
   recordInner: {
-    width: 20,
-    height: 20,
+    width: 18,
+    height: 18,
     borderRadius: 4,
     backgroundColor: '#FFFFFF',
   },

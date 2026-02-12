@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -25,6 +25,7 @@ import { supabase, clearInvalidSession } from './lib/supabase';
 import { AuthService, handleAuthCallbackUrl } from './services/AuthService';
 import { AnalyticsService } from './services/AnalyticsService';
 import { AuthContext } from './contexts/AuthContext';
+import { ToastContainer } from './components/Toast';
 
 const TOS_ACCEPTED_KEY = 'conqr_tos_accepted_v1';
 
@@ -204,8 +205,13 @@ function AppNavigator() {
 
   if (isLoading) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#E65100" />
+      <View style={{ flex: 1, backgroundColor: '#1A1A1A', justifyContent: 'center', alignItems: 'center' }}>
+        <Image
+          source={require('./assets/conqr-logo.png')}
+          style={{ width: 120, height: 120, marginBottom: 24 }}
+          resizeMode="contain"
+        />
+        <ActivityIndicator size="small" color="#E65100" />
       </View>
     );
   }
@@ -276,6 +282,7 @@ export default function App() {
         <StatusBar style="dark" />
         <NavigationContainer>
           <AppNavigator />
+          <ToastContainer />
         </NavigationContainer>
       </SafeAreaProvider>
     </ErrorBoundary>

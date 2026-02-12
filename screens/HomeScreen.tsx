@@ -1,9 +1,11 @@
 import * as React from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, ActivityIndicator, Platform, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect } from '@react-navigation/native';
-import { Swords, ShieldAlert, X, User, UserPlus, MapPin, Check, Zap, Crosshair } from 'lucide-react-native';
+import { Swords, ShieldAlert, X, User, UserPlus, MapPin, Check, Zap, Crosshair, Map, Clock, Settings } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
 import MapContainer, { MapContainerHandle } from '../components/MapContainer';
 import BottomTabBar from '../components/BottomTabBar';
 import { Territory, GPSPoint, TerritoryInvasion } from '../lib/types';
@@ -14,6 +16,9 @@ import { LocationService } from '../services/LocationService';
 import { EventModeService } from '../services/EventModeService';
 import { supabase } from '../lib/supabase';
 import { useScreenTracking } from '../lib/useScreenTracking';
+import { showToast } from '../components/Toast';
+
+const ONBOARDING_KEY = 'conqr_onboarding_shown_v1';
 
 interface HomeScreenProps {
   navigation: any;
@@ -36,6 +41,10 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
   const [locationError, setLocationError] = React.useState<string | null>(null);
   const mapRef = React.useRef<MapContainerHandle>(null);
 
+  // Onboarding state
+  const [showOnboarding, setShowOnboarding] = React.useState(false);
+  const [onboardingStep, setOnboardingStep] = React.useState(0);
+
   // Invasion modal state
   const [invasionModal, setInvasionModal] = React.useState<{
     visible: boolean;
@@ -47,15 +56,38 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
     visible: boolean;
     ownerId: string;
     ownerName: string;
+    territoryName: string;
+    territoryArea: number;
+    claimedAt: number;
     isOwnTerritory: boolean;
     friendStatus: 'none' | 'pending' | 'accepted' | 'loading';
-  }>({ visible: false, ownerId: '', ownerName: '', isOwnTerritory: false, friendStatus: 'none' });
+  }>({ visible: false, ownerId: '', ownerName: '', territoryName: '', territoryArea: 0, claimedAt: 0, isOwnTerritory: false, friendStatus: 'none' });
   const [sendingRequest, setSendingRequest] = React.useState(false);
 
   const formatArea = (sqMeters: number): string => {
     if (sqMeters >= 1000000) return `${(sqMeters / 1000000).toFixed(4)} km²`;
     if (sqMeters >= 10000) return `${(sqMeters / 10000).toFixed(2)} ha`;
     return `${Math.round(sqMeters)} m²`;
+  };
+
+  // Check onboarding on mount
+  React.useEffect(() => {
+    AsyncStorage.getItem(ONBOARDING_KEY).then(val => {
+      if (val !== 'true') setShowOnboarding(true);
+    }).catch(() => {});
+  }, []);
+
+  const dismissOnboarding = () => {
+    setShowOnboarding(false);
+    AsyncStorage.setItem(ONBOARDING_KEY, 'true').catch(() => {});
+  };
+
+  const advanceOnboarding = () => {
+    if (onboardingStep < 2) {
+      setOnboardingStep(prev => prev + 1);
+    } else {
+      dismissOnboarding();
+    }
   };
 
   const showInvasionAlert = (invasions: TerritoryInvasion[]) => {
@@ -72,10 +104,17 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
 
   const handleTerritoryPress = React.useCallback(async (territory: { id: string; ownerId: string; ownerName: string }) => {
     const isOwn = currentUserId === territory.ownerId;
+
+    // Look up full territory data from state
+    const fullTerritory = territories.find(t => t.id === territory.id);
+
     setTerritoryPopup({
       visible: true,
       ownerId: territory.ownerId,
       ownerName: territory.ownerName || 'Unknown',
+      territoryName: fullTerritory?.name || '',
+      territoryArea: fullTerritory?.area || 0,
+      claimedAt: fullTerritory?.claimedAt || 0,
       isOwnTerritory: isOwn,
       friendStatus: 'loading',
     });
@@ -93,15 +132,18 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
     } else {
       setTerritoryPopup(prev => ({ ...prev, friendStatus: 'none' }));
     }
-  }, [currentUserId]);
+  }, [currentUserId, territories]);
 
   const handleSendFriendRequest = async () => {
     setSendingRequest(true);
     try {
       await FriendService.sendFriendRequest(territoryPopup.ownerId);
       setTerritoryPopup(prev => ({ ...prev, friendStatus: 'pending' }));
+      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showToast('Friend request sent', 'success');
     } catch (err) {
       console.error('Failed to send friend request:', err);
+      showToast('Failed to send request', 'error');
     } finally {
       setSendingRequest(false);
     }
@@ -166,6 +208,7 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
           }
         } catch (err) {
           console.error('Failed to load territories:', err);
+          showToast('Failed to load map data', 'error');
         }
       };
       loadTerritories();
@@ -301,6 +344,24 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
 
   const hasDestroyed = invasionModal.invasions.some(inv => inv.territoryWasDestroyed);
 
+  const ONBOARDING_STEPS = [
+    {
+      title: 'Welcome to Conqr!',
+      body: 'This map shows territories claimed by all players. Your territories are highlighted in orange.',
+      icon: <Map color="#E65100" size={32} />,
+    },
+    {
+      title: 'Record an Activity',
+      body: 'Tap the red button to start recording a run, walk, or ride. Your path is tracked on the map.',
+      icon: <MapPin color="#E65100" size={32} />,
+    },
+    {
+      title: 'Claim Territory',
+      body: 'Close your loop by returning to your starting point. The enclosed area becomes your territory!',
+      icon: <Zap color="#E65100" size={32} />,
+    },
+  ];
+
   return (
     <View style={styles.container}>
       <StatusBar style="dark" />
@@ -343,9 +404,17 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
             onTerritoryPress={handleTerritoryPress}
           />
           {locationError && (
-            <View style={styles.locationErrorBanner}>
+            <TouchableOpacity
+              style={styles.locationErrorBanner}
+              onPress={() => Linking.openSettings()}
+              activeOpacity={0.8}
+            >
               <Text style={styles.locationErrorText}>{locationError}</Text>
-            </View>
+              <View style={styles.locationErrorAction}>
+                <Settings color="#FFFFFF" size={12} />
+                <Text style={styles.locationErrorActionText}>Open Settings</Text>
+              </View>
+            </TouchableOpacity>
           )}
           <TouchableOpacity
             style={styles.recenterButton}
@@ -357,6 +426,41 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
         </View>
       </SafeAreaView>
       <BottomTabBar activeTab="home" onTabPress={handleTabPress} />
+
+      {/* Onboarding overlay */}
+      <Modal
+        visible={showOnboarding}
+        transparent
+        animationType="fade"
+        onRequestClose={dismissOnboarding}
+      >
+        <View style={styles.onboardingBackdrop}>
+          <View style={styles.onboardingCard}>
+            <View style={styles.onboardingIconCircle}>
+              {ONBOARDING_STEPS[onboardingStep].icon}
+            </View>
+            <Text style={styles.onboardingTitle}>{ONBOARDING_STEPS[onboardingStep].title}</Text>
+            <Text style={styles.onboardingBody}>{ONBOARDING_STEPS[onboardingStep].body}</Text>
+
+            <View style={styles.onboardingDots}>
+              {ONBOARDING_STEPS.map((_, i) => (
+                <View key={i} style={[styles.onboardingDot, i === onboardingStep && styles.onboardingDotActive]} />
+              ))}
+            </View>
+
+            <TouchableOpacity style={styles.onboardingBtn} onPress={advanceOnboarding}>
+              <Text style={styles.onboardingBtnText}>
+                {onboardingStep < 2 ? 'Next' : 'Got it!'}
+              </Text>
+            </TouchableOpacity>
+            {onboardingStep < 2 && (
+              <TouchableOpacity onPress={dismissOnboarding} style={styles.onboardingSkip}>
+                <Text style={styles.onboardingSkipText}>Skip</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Territory tap popup */}
       <Modal
@@ -385,12 +489,34 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
                 <Text style={styles.popupUsername} numberOfLines={1}>
                   {territoryPopup.isOwnTerritory ? 'Your Territory' : territoryPopup.ownerName}
                 </Text>
-                <Text style={styles.popupHint}>
-                  {territoryPopup.isOwnTerritory ? 'Tap to view profile' : 'Tap to view profile'}
-                </Text>
+                {territoryPopup.territoryName ? (
+                  <Text style={styles.popupTerritoryName} numberOfLines={1}>
+                    {territoryPopup.territoryName}
+                  </Text>
+                ) : (
+                  <Text style={styles.popupHint}>Tap to view profile</Text>
+                )}
               </View>
               <MapPin color="#999999" size={16} />
             </TouchableOpacity>
+
+            {/* Territory details */}
+            {territoryPopup.territoryArea > 0 && (
+              <View style={styles.popupDetails}>
+                <View style={styles.popupDetailItem}>
+                  <Map color="#E65100" size={14} />
+                  <Text style={styles.popupDetailText}>{formatArea(territoryPopup.territoryArea)}</Text>
+                </View>
+                {territoryPopup.claimedAt > 0 && (
+                  <View style={styles.popupDetailItem}>
+                    <Clock color="#999999" size={14} />
+                    <Text style={styles.popupDetailTextMuted}>
+                      {new Date(territoryPopup.claimedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
 
             {!territoryPopup.isOwnTerritory && (
               <View style={styles.popupActions}>
@@ -565,14 +691,32 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: '#FF3B30',
-    paddingVertical: 6,
+    paddingVertical: 8,
     paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   locationErrorText: {
     color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+  locationErrorAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  locationErrorActionText: {
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '600',
-    textAlign: 'center',
   },
   recenterButton: {
     position: 'absolute',
@@ -586,9 +730,86 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+
+  // Onboarding
+  onboardingBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  },
+  onboardingCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 32,
+    width: '100%',
+    maxWidth: 320,
+    alignItems: 'center',
+  },
+  onboardingIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(230, 81, 0, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  onboardingTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  onboardingBody: {
+    fontSize: 15,
+    color: '#666666',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  onboardingDots: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 24,
+  },
+  onboardingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#E0E0E0',
+  },
+  onboardingDotActive: {
+    backgroundColor: '#E65100',
+    width: 24,
+  },
+  onboardingBtn: {
+    backgroundColor: '#E65100',
+    paddingVertical: 14,
+    paddingHorizontal: 48,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+  },
+  onboardingBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  onboardingSkip: {
+    marginTop: 12,
+    paddingVertical: 8,
+  },
+  onboardingSkipText: {
+    color: '#999999',
+    fontSize: 14,
+    fontWeight: '500',
   },
 
   // Territory popup
@@ -639,10 +860,38 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1A1A1A',
   },
+  popupTerritoryName: {
+    fontSize: 14,
+    color: '#E65100',
+    marginTop: 2,
+    fontWeight: '500',
+  },
   popupHint: {
     fontSize: 13,
     color: '#999999',
     marginTop: 2,
+  },
+  popupDetails: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+  },
+  popupDetailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  popupDetailText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#E65100',
+  },
+  popupDetailTextMuted: {
+    fontSize: 13,
+    color: '#999999',
   },
   popupActions: {
     marginTop: 16,

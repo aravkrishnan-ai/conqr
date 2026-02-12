@@ -181,8 +181,12 @@ export default function TermsOfServiceScreen({ onAccept }: TermsOfServiceScreenP
       <StatusBar style="dark" />
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <View style={styles.header}>
+          <View style={styles.progressRow}>
+            <View style={[styles.progressDot, styles.progressDotActive]} />
+            <View style={styles.progressDot} />
+          </View>
           <Text style={styles.headerTitle}>Terms of Service</Text>
-          <Text style={styles.headerSubtitle}>Please read and accept to continue</Text>
+          <Text style={styles.headerSubtitle}>Quick read, then you're almost in</Text>
         </View>
         <WebView
           source={{ html: TOS_HTML }}
@@ -214,9 +218,24 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingTop: 12,
+    paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
+  },
+  progressRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 12,
+  },
+  progressDot: {
+    width: 28,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E0E0E0',
+  },
+  progressDotActive: {
+    backgroundColor: '#E65100',
   },
   headerTitle: {
     fontSize: 20,
@@ -255,15 +274,20 @@ const styles = StyleSheet.create({
     color: '#888',
   },
   acceptButton: {
-    flex: 1,
+    flex: 1.5,
     paddingVertical: 14,
     borderRadius: 12,
     backgroundColor: '#E65100',
     alignItems: 'center',
+    shadowColor: '#E65100',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
   },
   acceptText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#FFFFFF',
   },
 });

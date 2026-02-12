@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { TouchableOpacity, Text, StyleSheet, View, ActivityIndicator } from 'react-native';
+import { TouchableOpacity, Text, StyleSheet, View, ActivityIndicator, Animated, Easing } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { AuthService } from '../services/AuthService';
 
@@ -28,6 +28,29 @@ const GoogleLogo = () => (
 export const GoogleSignInButton = () => {
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
+    const pulseAnim = React.useRef(new Animated.Value(1)).current;
+
+    React.useEffect(() => {
+        // Subtle breathing pulse to draw attention
+        const pulse = Animated.loop(
+            Animated.sequence([
+                Animated.timing(pulseAnim, {
+                    toValue: 1.02,
+                    duration: 1500,
+                    useNativeDriver: true,
+                    easing: Easing.inOut(Easing.ease),
+                }),
+                Animated.timing(pulseAnim, {
+                    toValue: 1,
+                    duration: 1500,
+                    useNativeDriver: true,
+                    easing: Easing.inOut(Easing.ease),
+                }),
+            ])
+        );
+        pulse.start();
+        return () => pulse.stop();
+    }, []);
 
     const handlePress = async () => {
         if (loading) return;
@@ -45,25 +68,27 @@ export const GoogleSignInButton = () => {
 
     return (
         <View style={styles.wrapper}>
-            <TouchableOpacity
-                style={[styles.button, loading && styles.buttonDisabled]}
-                onPress={handlePress}
-                disabled={loading}
-                activeOpacity={0.9}
-            >
-                <View style={styles.content}>
-                    {loading ? (
-                        <ActivityIndicator size="small" color="#000" style={styles.loader} />
-                    ) : (
-                        <View style={styles.logoContainer}>
-                            <GoogleLogo />
-                        </View>
-                    )}
-                    <Text style={styles.text}>
-                        {loading ? 'Signing in...' : 'Continue with Google'}
-                    </Text>
-                </View>
-            </TouchableOpacity>
+            <Animated.View style={{ transform: [{ scale: loading ? 1 : pulseAnim }], width: '100%' }}>
+                <TouchableOpacity
+                    style={[styles.button, loading && styles.buttonDisabled]}
+                    onPress={handlePress}
+                    disabled={loading}
+                    activeOpacity={0.9}
+                >
+                    <View style={styles.content}>
+                        {loading ? (
+                            <ActivityIndicator size="small" color="#000" style={styles.loader} />
+                        ) : (
+                            <View style={styles.logoContainer}>
+                                <GoogleLogo />
+                            </View>
+                        )}
+                        <Text style={styles.text}>
+                            {loading ? 'Signing in...' : 'Continue with Google'}
+                        </Text>
+                    </View>
+                </TouchableOpacity>
+            </Animated.View>
             {error && (
                 <Text style={styles.errorText}>{error}</Text>
             )}

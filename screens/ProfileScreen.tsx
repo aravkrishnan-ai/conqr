@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, TextInput, Alert, ActionSheetIOS, Platform, Switch, Modal, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { User, Flame, Pencil, Check, X, ChevronRight, MapPin, Clock, Footprints, Bike, PersonStanding, LogOut, Map, TrendingUp, Trash2, Shield, Camera, Zap } from 'lucide-react-native';
+import { User, Flame, Pencil, Check, X, ChevronRight, MapPin, Clock, Footprints, Bike, PersonStanding, LogOut, Map, TrendingUp, Trash2, Shield, Camera, Zap, Users } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import BottomTabBar from '../components/BottomTabBar';
 import { supabase } from '../lib/supabase';
@@ -532,7 +532,14 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
             <View style={styles.emptyState}>
               <Footprints color="#DDDDDD" size={40} />
               <Text style={styles.emptyText}>No activities yet</Text>
-              <Text style={styles.emptySubtext}>Record your first run to see it here</Text>
+              <Text style={styles.emptySubtext}>Record your first activity to claim territory</Text>
+              <TouchableOpacity
+                style={styles.emptyActionBtn}
+                onPress={() => navigation.navigate('Record')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.emptyActionText}>Start Recording</Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -612,6 +619,12 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
 
           {/* Settings */}
           <View style={styles.settingsSection}>
+            <TouchableOpacity style={styles.settingsRow} onPress={() => navigation.navigate('Friends')}>
+              <Users color="#E65100" size={18} />
+              <Text style={styles.settingsText}>Friends</Text>
+              <ChevronRight color="#CCCCCC" size={16} />
+            </TouchableOpacity>
+            <View style={styles.settingsDivider} />
             <TouchableOpacity style={styles.settingsRow} onPress={handlePrivacyPolicy}>
               <Shield color="#666666" size={18} />
               <Text style={styles.settingsText}>Privacy Policy</Text>
@@ -814,7 +827,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statNumber: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: '#1A1A1A',
   },
@@ -825,10 +838,11 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: 11,
-    color: '#888888',
+    color: '#717171',
     marginTop: 4,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
+    fontWeight: '500',
   },
   statDivider: {
     width: 1,
@@ -836,18 +850,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#EEEEEE',
   },
 
-  // This Week
+  // This Week - hero card
   weekCard: {
     backgroundColor: '#FFFFFF',
     marginTop: 8,
     marginHorizontal: 0,
-    paddingVertical: 18,
+    paddingVertical: 24,
     paddingHorizontal: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#E65100',
   },
   weekCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
     gap: 8,
   },
   weekCardAccent: {
@@ -857,7 +873,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   weekCardTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
     color: '#1A1A1A',
   },
@@ -869,16 +885,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   weekValue: {
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: '700',
     color: '#E65100',
   },
   weekLabel: {
     fontSize: 11,
     color: '#999999',
-    marginTop: 4,
+    marginTop: 6,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
+    fontWeight: '600',
   },
 
   // Empty state
@@ -899,13 +916,25 @@ const styles = StyleSheet.create({
     color: '#BBBBBB',
     marginTop: 4,
   },
+  emptyActionBtn: {
+    marginTop: 16,
+    backgroundColor: '#E65100',
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    borderRadius: 10,
+  },
+  emptyActionText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
 
   // Activities section
   activitiesSection: {
     marginTop: 8,
   },
   sectionTitle: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
     color: '#888888',
     paddingHorizontal: 20,
@@ -918,7 +947,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    marginBottom: 1,
+    marginBottom: 2,
     overflow: 'hidden',
   },
   activityAccent: {
@@ -962,7 +991,7 @@ const styles = StyleSheet.create({
     color: '#1A1A1A',
   },
   metricLabel: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#999999',
     marginTop: 1,
   },
@@ -1010,9 +1039,9 @@ const styles = StyleSheet.create({
   },
   deleteAccountText: {
     color: '#FF3B30',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '500',
-    opacity: 0.6,
+    opacity: 0.8,
   },
 
   // Event Name Modal

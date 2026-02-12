@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -10,6 +10,8 @@ import {
     Alert,
     ActivityIndicator,
     Image,
+    Animated,
+    Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -23,6 +25,43 @@ export default function ProfileSetupScreen() {
     const { setHasProfile, suggestedUsername, userAvatarUrl } = useAuth();
     const [username, setUsername] = useState('');
     const [loading, setLoading] = useState(false);
+
+    // Staggered entrance animations
+    const avatarFade = useRef(new Animated.Value(0)).current;
+    const avatarScale = useRef(new Animated.Value(0.8)).current;
+    const formFade = useRef(new Animated.Value(0)).current;
+    const formSlide = useRef(new Animated.Value(20)).current;
+    const buttonFade = useRef(new Animated.Value(0)).current;
+    const buttonSlide = useRef(new Animated.Value(20)).current;
+
+    useEffect(() => {
+        Animated.sequence([
+            Animated.parallel([
+                Animated.timing(avatarFade, {
+                    toValue: 1, duration: 400, useNativeDriver: true, easing: Easing.out(Easing.cubic),
+                }),
+                Animated.timing(avatarScale, {
+                    toValue: 1, duration: 400, useNativeDriver: true, easing: Easing.out(Easing.cubic),
+                }),
+            ]),
+            Animated.parallel([
+                Animated.timing(formFade, {
+                    toValue: 1, duration: 400, useNativeDriver: true, easing: Easing.out(Easing.cubic),
+                }),
+                Animated.timing(formSlide, {
+                    toValue: 0, duration: 400, useNativeDriver: true, easing: Easing.out(Easing.cubic),
+                }),
+            ]),
+            Animated.parallel([
+                Animated.timing(buttonFade, {
+                    toValue: 1, duration: 350, useNativeDriver: true, easing: Easing.out(Easing.cubic),
+                }),
+                Animated.timing(buttonSlide, {
+                    toValue: 0, duration: 350, useNativeDriver: true, easing: Easing.out(Easing.cubic),
+                }),
+            ]),
+        ]).start();
+    }, []);
 
     useEffect(() => {
         if (suggestedUsername && !username) {
@@ -68,7 +107,12 @@ export default function ProfileSetupScreen() {
                     style={styles.keyboardView}
                 >
                     <View style={styles.content}>
-                        <View style={styles.avatarSection}>
+                        <View style={styles.progressRow}>
+                            <View style={styles.progressDot} />
+                            <View style={[styles.progressDot, styles.progressDotActive]} />
+                        </View>
+
+                        <Animated.View style={[styles.avatarSection, { opacity: avatarFade, transform: [{ scale: avatarScale }] }]}>
                             {userAvatarUrl ? (
                                 <Image source={{ uri: userAvatarUrl }} style={styles.avatar} />
                             ) : (
@@ -76,46 +120,51 @@ export default function ProfileSetupScreen() {
                                     <User color="#E65100" size={40} />
                                 </View>
                             )}
-                        </View>
+                        </Animated.View>
 
-                        <Text style={styles.title}>Choose your name</Text>
-                        <Text style={styles.subtitle}>This is how you'll appear on leaderboards</Text>
+                        <Animated.View style={{ opacity: formFade, transform: [{ translateY: formSlide }], alignItems: 'center', width: '100%' }}>
+                            <Text style={styles.welcomeText}>Welcome to Conqr!</Text>
+                            <Text style={styles.title}>Choose your name</Text>
+                            <Text style={styles.subtitle}>This is how you'll appear on leaderboards</Text>
 
-                        <View style={styles.inputWrapper}>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Enter username"
-                                placeholderTextColor="#999999"
-                                value={username}
-                                onChangeText={setUsername}
-                                autoCapitalize="none"
-                                autoCorrect={false}
-                                autoFocus={!suggestedUsername}
-                                maxLength={24}
-                            />
-                            {suggestedUsername && username !== suggestedUsername && (
-                                <TouchableOpacity
-                                    style={styles.suggestButton}
-                                    onPress={() => setUsername(suggestedUsername)}
-                                >
-                                    <Sparkles color="#E65100" size={14} />
-                                    <Text style={styles.suggestText}>Use Google name</Text>
-                                </TouchableOpacity>
-                            )}
-                        </View>
+                            <View style={styles.inputWrapper}>
+                                <TextInput
+                                    style={styles.input}
+                                    placeholder="Enter username"
+                                    placeholderTextColor="#999999"
+                                    value={username}
+                                    onChangeText={setUsername}
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                    autoFocus={!suggestedUsername}
+                                    maxLength={24}
+                                />
+                                {suggestedUsername && username !== suggestedUsername && (
+                                    <TouchableOpacity
+                                        style={styles.suggestButton}
+                                        onPress={() => setUsername(suggestedUsername)}
+                                    >
+                                        <Sparkles color="#E65100" size={14} />
+                                        <Text style={styles.suggestText}>Use Google name</Text>
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        </Animated.View>
 
-                        <TouchableOpacity
-                            style={[styles.saveButton, loading && styles.disabledButton]}
-                            onPress={handleSave}
-                            disabled={loading}
-                            activeOpacity={0.8}
-                        >
-                            {loading ? (
-                                <ActivityIndicator color="#FFFFFF" />
-                            ) : (
-                                <Text style={styles.saveButtonText}>Continue</Text>
-                            )}
-                        </TouchableOpacity>
+                        <Animated.View style={{ opacity: buttonFade, transform: [{ translateY: buttonSlide }], width: '100%', alignItems: 'center' }}>
+                            <TouchableOpacity
+                                style={[styles.saveButton, loading && styles.disabledButton]}
+                                onPress={handleSave}
+                                disabled={loading}
+                                activeOpacity={0.8}
+                            >
+                                {loading ? (
+                                    <ActivityIndicator color="#FFFFFF" />
+                                ) : (
+                                    <Text style={styles.saveButtonText}>Let's go</Text>
+                                )}
+                            </TouchableOpacity>
+                        </Animated.View>
                     </View>
                 </KeyboardAvoidingView>
             </SafeAreaView>
@@ -140,8 +189,22 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
+    progressRow: {
+        flexDirection: 'row',
+        gap: 6,
+        marginBottom: 24,
+    },
+    progressDot: {
+        width: 28,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: '#E0E0E0',
+    },
+    progressDotActive: {
+        backgroundColor: '#E65100',
+    },
     avatarSection: {
-        marginBottom: 32,
+        marginBottom: 24,
     },
     avatar: {
         width: 100,
@@ -158,6 +221,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
+    welcomeText: {
+        fontSize: 15,
+        color: '#E65100',
+        fontWeight: '600',
+        marginBottom: 6,
+    },
     title: {
         fontSize: 28,
         fontWeight: '700',
@@ -168,7 +237,7 @@ const styles = StyleSheet.create({
         fontSize: 15,
         color: '#666666',
         marginTop: 8,
-        marginBottom: 40,
+        marginBottom: 32,
         textAlign: 'center',
     },
     inputWrapper: {

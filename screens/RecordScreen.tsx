@@ -1,8 +1,8 @@
 import * as React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Modal, Animated, Easing, Platform, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Modal, Animated, Easing, Platform, TextInput, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Footprints, Bike, PersonStanding, Trophy, MapPin, Clock, Gauge, Map, X, Swords, Share2 } from 'lucide-react-native';
+import { Footprints, Bike, PersonStanding, Trophy, MapPin, Clock, Gauge, Map, X, Swords, Share2, Settings } from 'lucide-react-native';
 import MapContainer, { MapContainerHandle } from '../components/MapContainer';
 import BottomTabBar from '../components/BottomTabBar';
 import { LocationService } from '../services/LocationService';
@@ -20,6 +20,7 @@ import { AnalyticsService } from '../services/AnalyticsService';
 import * as Haptics from 'expo-haptics';
 import { getDistance } from 'geolib';
 import { Crosshair } from 'lucide-react-native';
+import { showToast } from '../components/Toast';
 
 interface RecordScreenProps {
   navigation: any;
@@ -211,7 +212,7 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
       let slowSaveWarned = false;
       const saveTimeout = setTimeout(() => {
         slowSaveWarned = true;
-        Alert.alert("Still Saving", "Your activity is taking longer than usual to save. Please wait...");
+        Alert.alert("Saving to Cloud", "Your activity is uploading. Please keep the app open — this usually takes a few more seconds.");
       }, SLOW_SAVE_WARN_MS);
 
       try {
@@ -312,6 +313,7 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
           const paceFormatted = averageSpeed > 0 ? ActivityService.calculatePace(averageSpeed) : '--:--';
 
           if (savedTerritory) {
+            if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             pendingTerritoryRef.current = savedTerritory;
             setTerritoryNameInput('');
             setSuccessModal({
@@ -336,10 +338,10 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
             });
           }
         } else {
-          Alert.alert("Activity Too Short", "Move more to record your activity.");
+          Alert.alert("Activity Too Short", "You need to cover more distance to save an activity. Try walking or running for at least a minute.");
         }
       } catch {
-        Alert.alert("Error", "Failed to save activity.");
+        showToast('Failed to save activity. Check your connection.', 'error');
       } finally {
         clearTimeout(saveTimeout);
         setIsSaving(false);
@@ -381,6 +383,8 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
     setCurrentSpeed(0);
     await TrackingStore.start(type);
     AnalyticsService.trackEvent('activity_started', { activityType: type });
+    const label = type === 'RUN' ? 'Run' : type === 'RIDE' ? 'Ride' : 'Walk';
+    showToast(`Recording ${label}...`, 'info');
   };
 
   const formatDuration = (seconds: number): string => {
@@ -419,8 +423,6 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
       <StatusBar style="dark" />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.content}>
-          <Text style={styles.mapsLabel}>maps</Text>
-
           <View style={styles.mapContainer}>
             <MapContainer
               ref={mapRef}
@@ -430,9 +432,17 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
               style={styles.map}
             />
             {locationError && (
-              <View style={styles.locationErrorBanner}>
+              <TouchableOpacity
+                style={styles.locationErrorBanner}
+                onPress={() => Linking.openSettings()}
+                activeOpacity={0.8}
+              >
                 <Text style={styles.locationErrorText}>{locationError}</Text>
-              </View>
+                <View style={styles.locationErrorAction}>
+                  <Settings color="#FFFFFF" size={12} />
+                  <Text style={styles.locationErrorActionText}>Settings</Text>
+                </View>
+              </TouchableOpacity>
             )}
             {isTracking && distanceToStart !== null && (
               <View style={[
@@ -456,27 +466,33 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
             >
               <Crosshair color="#FFFFFF" size={20} />
             </TouchableOpacity>
-            <View style={styles.mapDivider} />
+
+            {/* Stats overlay on map */}
+            <View style={styles.statsOverlay}>
+              <View style={styles.statsRow}>
+                <View style={styles.statItem}>
+                  <Text style={styles.statValue}>
+                    {(currentDistance / 1000).toFixed(2)}
+                  </Text>
+                  <Text style={styles.statUnit}>km</Text>
+                  <Text style={styles.statLabel}>Distance</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statItem}>
+                  <Text style={styles.statValue}>{formatDuration(elapsedTime)}</Text>
+                  <Text style={styles.statLabel}>Duration</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statItem}>
+                  <Text style={styles.statValue}>{formatPace(currentSpeed)}</Text>
+                  <Text style={styles.statUnit}>/km</Text>
+                  <Text style={styles.statLabel}>Pace</Text>
+                </View>
+              </View>
+            </View>
           </View>
 
           <View style={styles.statsContainer}>
-            <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>
-                  {(currentDistance / 1000).toFixed(2)}km
-                </Text>
-                <Text style={styles.statLabel}>Distance</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{formatDuration(elapsedTime)}</Text>
-                <Text style={styles.statLabel}>Duration</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statValue}>{formatPace(currentSpeed)}</Text>
-                <Text style={styles.statLabel}>Pace</Text>
-              </View>
-            </View>
-
             <TouchableOpacity
               style={[
                 styles.startButton,
@@ -664,30 +680,14 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 20,
-  },
-  mapsLabel: {
-    fontSize: 18,
-    color: '#333333',
-    textAlign: 'center',
-    paddingVertical: 16,
-    fontWeight: '400',
   },
   mapContainer: {
     flex: 1,
-    borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#000000',
   },
   map: {
     flex: 1,
-  },
-  mapDivider: {
-    height: 4,
-    backgroundColor: '#333333',
-    marginHorizontal: 60,
-    borderRadius: 2,
-    marginTop: 8,
   },
   locationErrorBanner: {
     position: 'absolute',
@@ -695,14 +695,32 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     backgroundColor: '#FF3B30',
-    paddingVertical: 6,
+    paddingVertical: 8,
     paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   locationErrorText: {
     color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+  locationErrorAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  locationErrorActionText: {
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '600',
-    textAlign: 'center',
   },
   distanceToStartPill: {
     position: 'absolute',
@@ -726,46 +744,80 @@ const styles = StyleSheet.create({
   },
   recenterButton: {
     position: 'absolute',
-    bottom: 16,
-    right: 12,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    bottom: 140,
+    right: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#E65100',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  statsOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    paddingTop: 20,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
   statsContainer: {
-    paddingVertical: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: '#FFFFFF',
   },
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginBottom: 24,
+    alignItems: 'center',
   },
   statItem: {
     alignItems: 'center',
+    flex: 1,
+  },
+  statDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
   },
   statValue: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#1A1A1A',
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  statUnit: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.6)',
+    marginTop: -2,
   },
   statLabel: {
-    fontSize: 12,
-    color: '#666666',
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.5)',
     marginTop: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    fontWeight: '600',
   },
   startButton: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#E65100',
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
+    shadowColor: '#E65100',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   stopButton: {
     backgroundColor: '#FF3B30',
@@ -860,13 +912,18 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   successIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     backgroundColor: '#E65100',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+    shadowColor: '#E65100',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
   },
   successTitle: {
     fontSize: 22,
@@ -910,7 +967,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   successStatLabel: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#666666',
     marginTop: 2,
     textTransform: 'uppercase' as const,
@@ -934,7 +991,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#1A1A1A',
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     flex: 1,
     gap: 8,
   },
@@ -947,9 +1004,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#E65100',
     paddingVertical: 14,
     paddingHorizontal: 24,
-    borderRadius: 12,
+    borderRadius: 14,
     flex: 1,
     alignItems: 'center',
+    shadowColor: '#E65100',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
   },
   successDoneText: {
     color: '#FFFFFF',

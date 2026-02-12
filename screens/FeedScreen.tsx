@@ -864,7 +864,7 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F7F7F7',
   },
   center: {
     justifyContent: 'center',
@@ -872,6 +872,7 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   header: {
     flexDirection: 'row',
@@ -879,6 +880,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 16,
+    backgroundColor: '#FFFFFF',
   },
   headerLeft: {
     flexDirection: 'row',
@@ -920,10 +922,15 @@ const styles = StyleSheet.create({
 
   // Post card
   postCard: {
-    backgroundColor: '#FAFAFA',
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
   postHeader: {
     flexDirection: 'row',
@@ -937,19 +944,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   postAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(230, 81, 0, 0.1)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(230, 81, 0, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
     overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'rgba(230, 81, 0, 0.15)',
   },
   postAvatarImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   postUsername: {
     fontSize: 15,
@@ -1135,7 +1144,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   commentTime: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#999999',
     marginTop: 4,
   },

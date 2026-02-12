@@ -9,25 +9,60 @@ const { width, height } = Dimensions.get('window');
 
 export default function LandingScreen() {
     useScreenTracking('Landing');
-    const fadeAnim = React.useRef(new Animated.Value(0)).current;
-    const scaleAnim = React.useRef(new Animated.Value(0.9)).current;
+    const logoFade = React.useRef(new Animated.Value(0)).current;
+    const logoScale = React.useRef(new Animated.Value(0.85)).current;
+    const taglineFade = React.useRef(new Animated.Value(0)).current;
+    const taglineSlide = React.useRef(new Animated.Value(10)).current;
+    const bottomFade = React.useRef(new Animated.Value(0)).current;
+    const bottomSlide = React.useRef(new Animated.Value(30)).current;
 
     React.useEffect(() => {
-        Animated.parallel([
-            Animated.timing(fadeAnim, {
-                toValue: 1,
-                duration: 800,
-                useNativeDriver: true,
-                easing: Easing.out(Easing.cubic),
-            }),
-            Animated.timing(scaleAnim, {
-                toValue: 1,
-                duration: 800,
-                useNativeDriver: true,
-                easing: Easing.out(Easing.cubic),
-            }),
+        // Staggered entrance: logo → tagline → button
+        Animated.sequence([
+            Animated.parallel([
+                Animated.timing(logoFade, {
+                    toValue: 1,
+                    duration: 700,
+                    useNativeDriver: true,
+                    easing: Easing.out(Easing.cubic),
+                }),
+                Animated.timing(logoScale, {
+                    toValue: 1,
+                    duration: 700,
+                    useNativeDriver: true,
+                    easing: Easing.out(Easing.cubic),
+                }),
+            ]),
+            Animated.parallel([
+                Animated.timing(taglineFade, {
+                    toValue: 1,
+                    duration: 500,
+                    useNativeDriver: true,
+                    easing: Easing.out(Easing.cubic),
+                }),
+                Animated.timing(taglineSlide, {
+                    toValue: 0,
+                    duration: 500,
+                    useNativeDriver: true,
+                    easing: Easing.out(Easing.cubic),
+                }),
+            ]),
+            Animated.parallel([
+                Animated.timing(bottomFade, {
+                    toValue: 1,
+                    duration: 500,
+                    useNativeDriver: true,
+                    easing: Easing.out(Easing.cubic),
+                }),
+                Animated.timing(bottomSlide, {
+                    toValue: 0,
+                    duration: 500,
+                    useNativeDriver: true,
+                    easing: Easing.out(Easing.cubic),
+                }),
+            ]),
         ]).start();
-    }, [fadeAnim, scaleAnim]);
+    }, []);
 
     return (
         <View style={styles.container}>
@@ -40,8 +75,8 @@ export default function LandingScreen() {
                             style={[
                                 styles.logoContainer,
                                 {
-                                    opacity: fadeAnim,
-                                    transform: [{ scale: scaleAnim }],
+                                    opacity: logoFade,
+                                    transform: [{ scale: logoScale }],
                                 },
                             ]}
                         >
@@ -51,12 +86,26 @@ export default function LandingScreen() {
                                 resizeMode="contain"
                             />
                         </Animated.View>
+                        <Animated.Text
+                            style={[
+                                styles.tagline,
+                                {
+                                    opacity: taglineFade,
+                                    transform: [{ translateY: taglineSlide }],
+                                },
+                            ]}
+                        >
+                            Claim your territory
+                        </Animated.Text>
                     </View>
 
                     <Animated.View
                         style={[
                             styles.bottomSection,
-                            { opacity: fadeAnim },
+                            {
+                                opacity: bottomFade,
+                                transform: [{ translateY: bottomSlide }],
+                            },
                         ]}
                     >
                         <GoogleSignInButton />
@@ -93,6 +142,13 @@ const styles = StyleSheet.create({
     logoImage: {
         width: 220,
         height: 220,
+    },
+    tagline: {
+        fontSize: 18,
+        color: '#AAAAAA',
+        fontWeight: '500',
+        letterSpacing: 0.5,
+        marginTop: 4,
     },
     bottomSection: {
         paddingBottom: 32,
