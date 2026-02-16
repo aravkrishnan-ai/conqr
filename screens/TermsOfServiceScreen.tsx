@@ -158,7 +158,7 @@ const TOS_HTML = `<!DOCTYPE html>
     <h2>17. Contact Us</h2>
     <p>If you have questions about these Terms of Service, please contact us at:</p>
     <ul>
-        <li><strong>Email:</strong> conqrapp@gmail.com</li>
+        <li><strong>Email:</strong> conqrrunning@gmail.com</li>
     </ul>
 
     <div class="footer">

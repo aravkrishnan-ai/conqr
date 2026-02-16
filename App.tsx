@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Image } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Image } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -50,17 +50,29 @@ class ErrorBoundary extends React.Component<
     AnalyticsService.trackCrash(error, errorInfo.componentStack || undefined);
   }
 
+  handleRestart = () => {
+    this.setState({ hasError: false, error: null, errorInfo: '' });
+  };
+
   render() {
     if (this.state.hasError) {
       return (
         <View style={errorStyles.container}>
-          <Text style={errorStyles.title}>App Crashed</Text>
-          <ScrollView style={errorStyles.scroll}>
-            <Text style={errorStyles.errorName}>{this.state.error?.name}</Text>
-            <Text style={errorStyles.errorMessage}>{this.state.error?.message}</Text>
-            <Text style={errorStyles.errorStack}>{this.state.error?.stack}</Text>
-            <Text style={errorStyles.componentStack}>{this.state.errorInfo}</Text>
-          </ScrollView>
+          <View style={errorStyles.iconCircle}>
+            <Text style={errorStyles.iconText}>!</Text>
+          </View>
+          <Text style={errorStyles.title}>Something went wrong</Text>
+          <Text style={errorStyles.message}>
+            The app ran into an unexpected problem. Please try restarting.
+          </Text>
+          <View style={errorStyles.buttonRow}>
+            <Text style={errorStyles.button} onPress={this.handleRestart}>
+              Restart App
+            </Text>
+          </View>
+          <Text style={errorStyles.supportText}>
+            If this keeps happening, please contact support at conqrrunning@gmail.com
+          </Text>
         </View>
       );
     }
@@ -69,13 +81,14 @@ class ErrorBoundary extends React.Component<
 }
 
 const errorStyles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1a0000', padding: 20, paddingTop: 60 },
-  title: { color: '#ff4444', fontSize: 24, fontWeight: 'bold', marginBottom: 20 },
-  scroll: { flex: 1 },
-  errorName: { color: '#ff8888', fontSize: 18, fontWeight: 'bold', marginBottom: 8 },
-  errorMessage: { color: '#ffaaaa', fontSize: 16, marginBottom: 16 },
-  errorStack: { color: '#888', fontSize: 12, fontFamily: 'monospace', marginBottom: 16 },
-  componentStack: { color: '#666', fontSize: 10, fontFamily: 'monospace' },
+  container: { flex: 1, backgroundColor: '#1A1A1A', padding: 32, justifyContent: 'center', alignItems: 'center' },
+  iconCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#E65100', alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
+  iconText: { color: '#FFFFFF', fontSize: 32, fontWeight: '700' },
+  title: { color: '#FFFFFF', fontSize: 22, fontWeight: '700', marginBottom: 12, textAlign: 'center' },
+  message: { color: '#999999', fontSize: 15, textAlign: 'center', lineHeight: 22, marginBottom: 32 },
+  buttonRow: { marginBottom: 24 },
+  button: { color: '#FFFFFF', fontSize: 16, fontWeight: '600', backgroundColor: '#E65100', paddingVertical: 14, paddingHorizontal: 48, borderRadius: 12, overflow: 'hidden', textAlign: 'center' },
+  supportText: { color: '#666666', fontSize: 12, textAlign: 'center' },
 });
 
 function AppNavigator() {
@@ -279,7 +292,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
-        <StatusBar style="dark" />
+        <StatusBar style="light" />
         <NavigationContainer>
           <AppNavigator />
           <ToastContainer />

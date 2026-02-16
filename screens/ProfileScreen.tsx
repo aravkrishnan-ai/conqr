@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, TextInput, Alert, ActionSheetIOS, Platform, Switch, Modal, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { User, Flame, Pencil, Check, X, ChevronRight, MapPin, Clock, Footprints, Bike, PersonStanding, LogOut, Map, TrendingUp, Trash2, Shield, Camera, Zap, Users } from 'lucide-react-native';
+import { User, Pencil, Check, X, ChevronRight, Footprints, Bike, PersonStanding, LogOut, Trash2, Shield, Camera, Zap, Users } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import BottomTabBar from '../components/BottomTabBar';
 import { supabase } from '../lib/supabase';
@@ -41,9 +41,11 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
   const [togglingEventMode, setTogglingEventMode] = useState(false);
   const [eventNameModalVisible, setEventNameModalVisible] = useState(false);
   const [eventNameInput, setEventNameInput] = useState('');
+  const [eventDuration, setEventDuration] = useState(120); // minutes
 
   const initialLoadComplete = React.useRef(false);
   const isFetching = React.useRef(false);
+  const lastFetchTimeRef = React.useRef(0);
 
   const fetchData = useCallback(async (showRefreshing = false) => {
     if (isFetching.current) return;
@@ -64,7 +66,6 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
         const userTerritories = await TerritoryService.getUserTerritories(session.user.id);
         setTerritoryCount(userTerritories.length);
 
-        // Check if current user is the dev
         const isDev = EventModeService.isDevUser(session.user.email);
         setIsDevUser(isDev);
         if (isDev) {
@@ -78,6 +79,7 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
       setLoading(false);
       setRefreshing(false);
       isFetching.current = false;
+      lastFetchTimeRef.current = Date.now();
     }
   }, []);
 
@@ -91,6 +93,8 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
   useFocusEffect(
     useCallback(() => {
       if (loading) return;
+      const STALENESS_MS = 60_000;
+      if (Date.now() - lastFetchTimeRef.current < STALENESS_MS) return;
       fetchData();
     }, [fetchData, loading])
   );
@@ -127,7 +131,6 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
                       if (!session?.user) return;
                       const userId = session.user.id;
 
-                      // Delete user data from all tables
                       await Promise.allSettled([
                         supabase.from('analytics_events').delete().eq('user_id', userId),
                         supabase.from('territory_invasions').delete().or(`invaded_user_id.eq.${userId},invader_user_id.eq.${userId}`),
@@ -139,15 +142,12 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
                         supabase.from('activities').delete().eq('user_id', userId),
                       ]);
 
-                      // Delete user profile last
                       await supabase.from('users').delete().eq('id', userId);
-
-                      // Sign out and clear local data
                       await supabase.auth.signOut();
                       Alert.alert('Account Deleted', 'Your account and all data have been permanently deleted.');
                     } catch (err) {
                       console.error('Account deletion error:', err);
-                      Alert.alert('Error', 'Failed to delete account. Please try again or contact support at conqrapp@gmail.com');
+                      Alert.alert('Error', 'Failed to delete account. Please try again or contact support at conqrrunning@gmail.com');
                     }
                   },
                 },
@@ -167,7 +167,6 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
     if (togglingEventMode) return;
 
     if (!newValue) {
-      // Turning OFF — double confirmation (#5)
       Alert.alert(
         'End Event?',
         'This will end the event for all participants. Territories claimed during the event will be preserved. Normal territory conquering resumes for future activities.',
@@ -177,7 +176,6 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
             text: 'End Event',
             style: 'destructive',
             onPress: () => {
-              // Second confirmation
               Alert.alert(
                 'Are you sure?',
                 'This cannot be undone. The event will be archived to past events.',
@@ -205,8 +203,8 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
         ]
       );
     } else {
-      // Turning ON — show name input modal
       setEventNameInput('');
+      setEventDuration(120);
       setEventNameModalVisible(true);
     }
   };
@@ -219,7 +217,7 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
     }
     setEventNameModalVisible(false);
     setTogglingEventMode(true);
-    const result = await EventModeService.startEvent(name);
+    const result = await EventModeService.startEvent(name, eventDuration);
     if (result.success) {
       setEventModeEnabled(true);
     } else {
@@ -264,7 +262,6 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
         const ImagePicker = await import('expo-image-picker');
 
         if (index === 0) {
-          // Take photo
           const { status } = await ImagePicker.requestCameraPermissionsAsync();
           if (status !== 'granted') {
             Alert.alert('Permission Required', 'Camera access is needed to take a profile photo.');
@@ -284,7 +281,6 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
             await saveAvatar(base64Uri);
           }
         } else if (index === 1) {
-          // Choose from library
           const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
           if (status !== 'granted') {
             Alert.alert('Permission Required', 'Photo library access is needed to choose a profile picture.');
@@ -319,7 +315,6 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
         handleSelection
       );
     } else {
-      // Android: use Alert as action sheet
       Alert.alert('Change Profile Picture', 'Choose an option', [
         { text: 'Take Photo', onPress: () => handleSelection(0) },
         { text: 'Choose from Library', onPress: () => handleSelection(1) },
@@ -340,25 +335,19 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
   };
 
   const handleTabPress = (tab: 'home' | 'record' | 'profile' | 'friends' | 'leaderboard' | 'feed') => {
-    if (tab === 'home') {
-      navigation.navigate('Home');
-    } else if (tab === 'record') {
-      navigation.navigate('Record');
-    } else if (tab === 'friends') {
-      navigation.navigate('Friends');
-    } else if (tab === 'leaderboard') {
-      navigation.navigate('Leaderboard');
-    } else if (tab === 'feed') {
-      navigation.navigate('Feed');
-    }
+    if (tab === 'home') navigation.navigate('Home');
+    else if (tab === 'record') navigation.navigate('Record');
+    else if (tab === 'friends') navigation.navigate('Friends');
+    else if (tab === 'leaderboard') navigation.navigate('Leaderboard');
+    else if (tab === 'feed') navigation.navigate('Feed');
   };
 
   const getActivityTypeIcon = (type: string) => {
     switch (type.toUpperCase()) {
-      case 'RUN': return <Footprints color="#E65100" size={20} />;
-      case 'RIDE': return <Bike color="#E65100" size={20} />;
-      case 'WALK': return <PersonStanding color="#E65100" size={20} />;
-      default: return <Footprints color="#E65100" size={20} />;
+      case 'RUN': return <Footprints color="#E65100" size={16} />;
+      case 'RIDE': return <Bike color="#E65100" size={16} />;
+      case 'WALK': return <PersonStanding color="#E65100" size={16} />;
+      default: return <Footprints color="#E65100" size={16} />;
     }
   };
 
@@ -377,6 +366,11 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
     };
   }, [activities]);
 
+  const memberSince = useMemo(() => {
+    if (!profile?.createdAt) return '';
+    return new Date(profile.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  }, [profile?.createdAt]);
+
   if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
@@ -385,22 +379,36 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
     );
   }
 
-  const streak = 0;
-
-  // Format the hero distance - large display
-  const heroDistance = stats?.totalDistance || 0;
-  const heroDistanceStr = heroDistance < 1000
-    ? `${Math.round(heroDistance)}`
-    : `${(heroDistance / 1000).toFixed(1)}`;
-  const heroDistanceUnit = heroDistance < 1000 ? 'm' : 'km';
+  const totalDist = stats?.totalDistance || 0;
+  const distStr = totalDist < 1000 ? `${Math.round(totalDist)} m` : `${(totalDist / 1000).toFixed(1)} km`;
 
   return (
     <View style={styles.container}>
       <StatusBar style="dark" />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Profile</Text>
+          {isEditing ? (
+            <View style={styles.headerActions}>
+              <TouchableOpacity onPress={cancelEditing} style={styles.headerBtn} activeOpacity={0.6}>
+                <X color="#999999" size={20} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={saveEdits} disabled={saving} style={styles.headerBtn} activeOpacity={0.6}>
+                {saving ? <ActivityIndicator size="small" color="#E65100" /> : <Check color="#E65100" size={20} />}
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity onPress={startEditing} style={styles.headerBtn} activeOpacity={0.6}>
+              <Pencil color="#999999" size={18} />
+            </TouchableOpacity>
+          )}
+        </View>
+
         <ScrollView
-          style={styles.scrollContent}
+          style={styles.scroll}
           showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -410,116 +418,92 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
             />
           }
         >
-          {/* Profile header */}
-          <View style={styles.headerSection}>
-            <View style={styles.headerTop}>
-              <View style={{ width: 36 }} />
-              <Text style={styles.headerTitle}>Profile</Text>
-              {isEditing ? (
-                <View style={styles.editActions}>
-                  <TouchableOpacity onPress={cancelEditing} style={styles.editActionBtn}>
-                    <X color="#999999" size={20} />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={saveEdits} disabled={saving} style={styles.editActionBtn}>
-                    {saving ? (
-                      <ActivityIndicator size="small" color="#E65100" />
-                    ) : (
-                      <Check color="#E65100" size={20} />
-                    )}
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity onPress={startEditing} style={styles.editBtn}>
-                  <Pencil color="#999999" size={18} />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Centered avatar with camera overlay */}
-            <View style={styles.avatarSection}>
-              <TouchableOpacity
-                style={styles.avatarTouchable}
-                onPress={handleChangeAvatar}
-                disabled={updatingAvatar}
-                activeOpacity={0.8}
-              >
-                <View style={styles.avatarRing}>
-                  {updatingAvatar ? (
-                    <View style={styles.avatarPlaceholder}>
-                      <ActivityIndicator color="#E65100" size="small" />
-                    </View>
-                  ) : profile?.avatarUrl ? (
-                    <Image source={{ uri: profile.avatarUrl }} style={styles.avatar} />
-                  ) : (
-                    <View style={styles.avatarPlaceholder}>
-                      <User color="#E65100" size={36} />
-                    </View>
-                  )}
-                </View>
-                <View style={styles.cameraOverlay}>
-                  <Camera color="#FFFFFF" size={14} />
-                </View>
-              </TouchableOpacity>
-              <Text style={styles.username}>{profile?.username || 'your_username'}</Text>
-              {profile?.bio && !isEditing ? (
-                <Text style={styles.bio} numberOfLines={2}>{profile.bio}</Text>
-              ) : null}
-            </View>
-
-            {/* Bio editor */}
-            {isEditing && (
-              <View style={styles.bioSection}>
-                <TextInput
-                  style={styles.bioInput}
-                  value={editBio}
-                  onChangeText={setEditBio}
-                  placeholder="Add a bio..."
-                  placeholderTextColor="#AAAAAA"
-                  multiline
-                  maxLength={120}
-                />
+          {/* Identity */}
+          <View style={styles.identity}>
+            <TouchableOpacity
+              style={styles.avatarWrap}
+              onPress={handleChangeAvatar}
+              disabled={updatingAvatar}
+              activeOpacity={0.8}
+            >
+              <View style={styles.avatarBorder}>
+                {updatingAvatar ? (
+                  <View style={styles.avatarFallback}>
+                    <ActivityIndicator color="#E65100" size="small" />
+                  </View>
+                ) : profile?.avatarUrl ? (
+                  <Image source={{ uri: profile.avatarUrl }} style={styles.avatarImg} />
+                ) : (
+                  <View style={styles.avatarFallback}>
+                    <User color="#E65100" size={32} />
+                  </View>
+                )}
               </View>
+              <View style={styles.cameraBadge}>
+                <Camera color="#FFFFFF" size={11} />
+              </View>
+            </TouchableOpacity>
+
+            <Text style={styles.username}>{profile?.username || 'your_username'}</Text>
+
+            {profile?.bio && !isEditing ? (
+              <Text style={styles.bio} numberOfLines={2}>{profile.bio}</Text>
+            ) : null}
+
+            {memberSince ? (
+              <Text style={styles.memberSince}>Joined {memberSince}</Text>
+            ) : null}
+
+            {isEditing && (
+              <TextInput
+                style={styles.bioInput}
+                value={editBio}
+                onChangeText={setEditBio}
+                placeholder="Add a bio..."
+                placeholderTextColor="#BBBBBB"
+                multiline
+                maxLength={120}
+              />
             )}
           </View>
 
-          {/* Stats strip */}
-          <View style={styles.statsStrip}>
-            <View style={styles.statCell}>
-              <Text style={styles.statNumber}>{stats?.totalActivities || 0}</Text>
+          {/* Stats */}
+          <View style={styles.statsCard}>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{stats?.totalActivities || 0}</Text>
               <Text style={styles.statLabel}>Activities</Text>
             </View>
             <View style={styles.statDivider} />
-            <View style={styles.statCell}>
-              <Text style={styles.statNumber}>{heroDistanceStr}<Text style={styles.statUnit}> {heroDistanceUnit}</Text></Text>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{distStr}</Text>
               <Text style={styles.statLabel}>Distance</Text>
             </View>
             <View style={styles.statDivider} />
-            <View style={styles.statCell}>
-              <Text style={styles.statNumber}>{formatDuration(stats?.totalDuration || 0)}</Text>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{formatDuration(stats?.totalDuration || 0)}</Text>
               <Text style={styles.statLabel}>Time</Text>
             </View>
             <View style={styles.statDivider} />
-            <View style={styles.statCell}>
-              <Text style={styles.statNumber}>{territoryCount}</Text>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{territoryCount}</Text>
               <Text style={styles.statLabel}>Territories</Text>
             </View>
           </View>
 
-          {/* This Week card */}
-          <View style={styles.weekCard}>
-            <View style={styles.weekCardHeader}>
-              <View style={styles.weekCardAccent} />
-              <Text style={styles.weekCardTitle}>This Week</Text>
-            </View>
-            <View style={styles.weekGrid}>
+          {/* This Week */}
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>This Week</Text>
+            <View style={styles.weekCard}>
               <View style={styles.weekItem}>
                 <Text style={styles.weekValue}>{thisWeekStats.count}</Text>
                 <Text style={styles.weekLabel}>Activities</Text>
               </View>
+              <View style={styles.weekDivider} />
               <View style={styles.weekItem}>
                 <Text style={styles.weekValue}>{formatDistance(thisWeekStats.distance)}</Text>
                 <Text style={styles.weekLabel}>Distance</Text>
               </View>
+              <View style={styles.weekDivider} />
               <View style={styles.weekItem}>
                 <Text style={styles.weekValue}>{formatDuration(thisWeekStats.duration)}</Text>
                 <Text style={styles.weekLabel}>Time</Text>
@@ -527,64 +511,52 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
             </View>
           </View>
 
-          {/* Empty state */}
+          {/* Empty State */}
           {activities.length === 0 && (
-            <View style={styles.emptyState}>
-              <Footprints color="#DDDDDD" size={40} />
+            <View style={styles.emptyCard}>
               <Text style={styles.emptyText}>No activities yet</Text>
               <Text style={styles.emptySubtext}>Record your first activity to claim territory</Text>
               <TouchableOpacity
-                style={styles.emptyActionBtn}
+                style={styles.emptyBtn}
                 onPress={() => navigation.navigate('Record')}
                 activeOpacity={0.8}
               >
-                <Text style={styles.emptyActionText}>Start Recording</Text>
+                <Text style={styles.emptyBtnText}>Start Recording</Text>
               </TouchableOpacity>
             </View>
           )}
 
           {/* Recent Activities */}
           {activities.length > 0 && (
-            <View style={styles.activitiesSection}>
-              <Text style={styles.sectionTitle}>Recent Activities</Text>
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>Recent Activities</Text>
               {activities.slice(0, 10).map((activity) => (
                 <TouchableOpacity
                   key={activity.id}
-                  style={styles.activityCard}
+                  style={styles.activityRow}
                   onPress={() => navigation.navigate('ActivityDetails', { activityId: activity.id })}
-                  activeOpacity={0.7}
+                  activeOpacity={0.6}
                 >
-                  <View style={styles.activityAccent} />
-                  <View style={styles.activityBody}>
-                    <View style={styles.activityHeader}>
-                      <View style={styles.activityTypeRow}>
-                        {getActivityTypeIcon(activity.type)}
-                        <Text style={styles.activityType}>
-                          {activity.type === 'RUN' ? 'Run' : activity.type === 'RIDE' ? 'Ride' : 'Walk'}
-                        </Text>
-                      </View>
-                      <Text style={styles.activityDate}>
-                        {new Date(activity.startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </Text>
-                    </View>
-                    <View style={styles.activityMetricsRow}>
-                      <View style={styles.activityMetric}>
-                        <Text style={styles.metricValue}>{formatDistance(activity.distance)}</Text>
-                        <Text style={styles.metricLabel}>Distance</Text>
-                      </View>
-                      <View style={styles.activityMetric}>
-                        <Text style={styles.metricValue}>{formatDuration(activity.duration)}</Text>
-                        <Text style={styles.metricLabel}>Time</Text>
-                      </View>
-                      {activity.averageSpeed ? (
-                        <View style={styles.activityMetric}>
-                          <Text style={styles.metricValue}>{(activity.averageSpeed * 3.6).toFixed(1)} km/h</Text>
-                          <Text style={styles.metricLabel}>Pace</Text>
-                        </View>
-                      ) : null}
-                    </View>
+                  <View style={styles.activityIcon}>
+                    {getActivityTypeIcon(activity.type)}
                   </View>
-                  <ChevronRight color="#CCCCCC" size={18} style={{ marginRight: 12 }} />
+                  <View style={styles.activityContent}>
+                    <Text style={styles.activityTitle}>
+                      {activity.type === 'RUN' ? 'Run' : activity.type === 'RIDE' ? 'Ride' : 'Walk'}
+                    </Text>
+                    <Text style={styles.activityMeta}>
+                      {formatDistance(activity.distance)}
+                      {'  '}
+                      {formatDuration(activity.duration)}
+                      {activity.averageSpeed && activity.averageSpeed > 0
+                        ? `  ${Math.floor(1000 / activity.averageSpeed / 60)}:${Math.floor((1000 / activity.averageSpeed) % 60).toString().padStart(2, '0')} /km`
+                        : ''}
+                    </Text>
+                  </View>
+                  <Text style={styles.activityDate}>
+                    {new Date(activity.startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </Text>
+                  <ChevronRight color="#CCCCCC" size={16} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -592,58 +564,57 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
 
           {/* Event Mode (dev only) */}
           {isDevUser && (
-            <View style={styles.settingsSection}>
-              <View style={styles.settingsRow}>
-                <Zap color={eventModeEnabled ? '#E65100' : '#666666'} size={18} />
-                <Text style={[styles.settingsText, eventModeEnabled && { color: '#E65100', fontWeight: '700' }]}>
-                  Event Mode
-                </Text>
-                {togglingEventMode ? (
-                  <ActivityIndicator size="small" color="#E65100" />
-                ) : (
-                  <Switch
-                    value={eventModeEnabled}
-                    onValueChange={handleToggleEventMode}
-                    trackColor={{ false: '#E0E0E0', true: 'rgba(230, 81, 0, 0.4)' }}
-                    thumbColor={eventModeEnabled ? '#E65100' : '#CCCCCC'}
-                  />
+            <View style={styles.section}>
+              <View style={styles.card}>
+                <View style={styles.menuRow}>
+                  <Zap color={eventModeEnabled ? '#E65100' : '#999999'} size={18} />
+                  <Text style={[styles.menuText, eventModeEnabled && styles.menuTextActive]}>Event Mode</Text>
+                  {togglingEventMode ? (
+                    <ActivityIndicator size="small" color="#E65100" />
+                  ) : (
+                    <Switch
+                      value={eventModeEnabled}
+                      onValueChange={handleToggleEventMode}
+                      trackColor={{ false: '#E0E0E0', true: 'rgba(230, 81, 0, 0.4)' }}
+                      thumbColor={eventModeEnabled ? '#E65100' : '#CCCCCC'}
+                    />
+                  )}
+                </View>
+                {eventModeEnabled && (
+                  <Text style={styles.eventHint}>Territory conquering is disabled. All claims coexist.</Text>
                 )}
               </View>
-              {eventModeEnabled && (
-                <Text style={styles.eventModeHint}>
-                  Territory conquering is disabled. All claims coexist.
-                </Text>
-              )}
             </View>
           )}
 
           {/* Settings */}
-          <View style={styles.settingsSection}>
-            <TouchableOpacity style={styles.settingsRow} onPress={() => navigation.navigate('Friends')}>
-              <Users color="#E65100" size={18} />
-              <Text style={styles.settingsText}>Friends</Text>
-              <ChevronRight color="#CCCCCC" size={16} />
-            </TouchableOpacity>
-            <View style={styles.settingsDivider} />
-            <TouchableOpacity style={styles.settingsRow} onPress={handlePrivacyPolicy}>
-              <Shield color="#666666" size={18} />
-              <Text style={styles.settingsText}>Privacy Policy</Text>
-              <ChevronRight color="#CCCCCC" size={16} />
-            </TouchableOpacity>
-            <View style={styles.settingsDivider} />
-            <TouchableOpacity style={styles.settingsRow} onPress={handleSignOut}>
-              <LogOut color="#FF3B30" size={18} />
-              <Text style={[styles.settingsText, { color: '#FF3B30' }]}>Sign Out</Text>
-            </TouchableOpacity>
+          <View style={styles.section}>
+            <View style={styles.card}>
+              <TouchableOpacity style={styles.menuRow} onPress={() => navigation.navigate('Friends')} activeOpacity={0.6}>
+                <Users color="#999999" size={18} />
+                <Text style={styles.menuText}>Friends</Text>
+                <ChevronRight color="#CCCCCC" size={16} />
+              </TouchableOpacity>
+              <View style={styles.menuDivider} />
+              <TouchableOpacity style={styles.menuRow} onPress={handlePrivacyPolicy} activeOpacity={0.6}>
+                <Shield color="#999999" size={18} />
+                <Text style={styles.menuText}>Privacy Policy</Text>
+                <ChevronRight color="#CCCCCC" size={16} />
+              </TouchableOpacity>
+              <View style={styles.menuDivider} />
+              <TouchableOpacity style={styles.menuRow} onPress={handleSignOut} activeOpacity={0.6}>
+                <LogOut color="#FF3B30" size={18} />
+                <Text style={[styles.menuText, styles.menuTextDanger]}>Sign Out</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {/* Delete account */}
-          <TouchableOpacity style={styles.deleteAccountButton} onPress={handleDeleteAccount}>
-            <Trash2 color="#FF3B30" size={14} />
-            <Text style={styles.deleteAccountText}>Delete Account</Text>
+          <TouchableOpacity style={styles.deleteBtn} onPress={handleDeleteAccount} activeOpacity={0.6}>
+            <Trash2 color="#FF3B30" size={12} />
+            <Text style={styles.deleteText}>Delete Account</Text>
           </TouchableOpacity>
 
-          <View style={{ height: 24 }} />
+          <View style={{ height: 20 }} />
         </ScrollView>
       </SafeAreaView>
 
@@ -658,15 +629,15 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.eventNameModalBackdrop}
+          style={styles.modalBackdrop}
         >
-          <View style={styles.eventNameModalContainer}>
-            <Text style={styles.eventNameModalTitle}>Start Event</Text>
-            <Text style={styles.eventNameModalSubtitle}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Start Event</Text>
+            <Text style={styles.modalSubtitle}>
               Enter a name for this event. It will appear on the leaderboard.
             </Text>
             <TextInput
-              style={styles.eventNameInput}
+              style={styles.modalInput}
               value={eventNameInput}
               onChangeText={setEventNameInput}
               placeholder="e.g. Spring Challenge 2025"
@@ -676,19 +647,33 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
               returnKeyType="done"
               onSubmitEditing={handleStartEvent}
             />
-            <View style={styles.eventNameModalActions}>
+            <Text style={styles.modalDurationLabel}>Duration</Text>
+            <View style={styles.modalDurationRow}>
+              {[60, 120, 180].map(mins => (
+                <TouchableOpacity
+                  key={mins}
+                  style={[styles.modalDurationBtn, eventDuration === mins && styles.modalDurationBtnActive]}
+                  onPress={() => setEventDuration(mins)}
+                >
+                  <Text style={[styles.modalDurationBtnText, eventDuration === mins && styles.modalDurationBtnTextActive]}>
+                    {mins / 60}h
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.modalActions}>
               <TouchableOpacity
-                style={styles.eventNameCancelBtn}
+                style={styles.modalCancelBtn}
                 onPress={() => setEventNameModalVisible(false)}
               >
-                <Text style={styles.eventNameCancelText}>Cancel</Text>
+                <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.eventNameStartBtn, !eventNameInput.trim() && styles.eventNameStartBtnDisabled]}
+                style={[styles.modalConfirmBtn, !eventNameInput.trim() && styles.modalConfirmDisabled]}
                 onPress={handleStartEvent}
                 disabled={!eventNameInput.trim()}
               >
-                <Text style={styles.eventNameStartText}>Start Event</Text>
+                <Text style={styles.modalConfirmText}>Start Event</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -711,76 +696,79 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  scrollContent: {
-    flex: 1,
-    backgroundColor: '#F7F7F7',
-  },
 
-  // Header
-  headerSection: {
-    backgroundColor: '#FFFFFF',
-    paddingBottom: 24,
-  },
-  headerTop: {
+  // Header — matches Leaderboard, Feed, Friends
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+    backgroundColor: '#FFFFFF',
   },
   headerTitle: {
-    fontSize: 17,
-    fontWeight: '600',
+    fontSize: 24,
+    fontWeight: '700',
     color: '#1A1A1A',
   },
-  editBtn: {
-    padding: 8,
-  },
-  editActions: {
+  headerActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 4,
   },
-  editActionBtn: {
-    padding: 8,
-  },
-
-  // Avatar
-  avatarSection: {
-    alignItems: 'center',
-    paddingTop: 4,
-  },
-  avatarTouchable: {
-    position: 'relative',
-    marginBottom: 14,
-  },
-  avatarRing: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    borderWidth: 3,
-    borderColor: '#E65100',
-    padding: 2,
-  },
-  avatar: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 40,
-  },
-  avatarPlaceholder: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 40,
-    backgroundColor: '#FFF3E0',
+  headerBtn: {
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cameraOverlay: {
+
+  // Scroll
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 8,
+  },
+
+  // Identity
+  identity: {
+    alignItems: 'center',
+    paddingTop: 28,
+    paddingBottom: 24,
+    backgroundColor: '#FFFFFF',
+  },
+  avatarWrap: {
+    position: 'relative',
+    marginBottom: 14,
+  },
+  avatarBorder: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 2,
+    borderColor: '#E65100',
+    overflow: 'hidden',
+  },
+  avatarImg: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarFallback: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(230, 81, 0, 0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cameraBadge: {
     position: 'absolute',
     bottom: 0,
-    right: 0,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    right: -2,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: '#E65100',
     alignItems: 'center',
     justifyContent: 'center',
@@ -788,329 +776,330 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
   },
   username: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
     color: '#1A1A1A',
   },
   bio: {
     fontSize: 14,
-    color: '#888888',
+    color: '#666666',
     marginTop: 4,
     textAlign: 'center',
-    paddingHorizontal: 40,
+    paddingHorizontal: 48,
+    lineHeight: 20,
   },
-  bioSection: {
-    marginTop: 12,
-    paddingHorizontal: 20,
+  memberSince: {
+    fontSize: 12,
+    color: '#999999',
+    marginTop: 6,
+    fontWeight: '500',
   },
   bioInput: {
+    marginTop: 16,
+    marginHorizontal: 32,
     backgroundColor: '#F5F5F5',
     borderRadius: 12,
     padding: 14,
     color: '#1A1A1A',
     fontSize: 14,
-    minHeight: 72,
+    minHeight: 64,
     textAlignVertical: 'top',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
+    alignSelf: 'stretch',
   },
 
   // Stats strip
-  statsStrip: {
+  statsCard: {
     flexDirection: 'row',
+    marginHorizontal: 16,
+    marginTop: 4,
     backgroundColor: '#FFFFFF',
-    marginTop: 8,
-    paddingVertical: 20,
+    borderRadius: 14,
+    paddingVertical: 18,
   },
-  statCell: {
+  statItem: {
     flex: 1,
     alignItems: 'center',
   },
-  statNumber: {
-    fontSize: 20,
+  statValue: {
+    fontSize: 17,
     fontWeight: '700',
     color: '#1A1A1A',
   },
-  statUnit: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#888888',
-  },
   statLabel: {
     fontSize: 11,
-    color: '#717171',
-    marginTop: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    fontWeight: '500',
+    color: '#999999',
+    marginTop: 3,
+    fontWeight: '600',
   },
   statDivider: {
     width: 1,
     alignSelf: 'stretch',
-    backgroundColor: '#EEEEEE',
+    backgroundColor: '#F0F0F0',
   },
 
-  // This Week - hero card
+  // Sections
+  section: {
+    marginTop: 20,
+    paddingHorizontal: 16,
+  },
+  sectionLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#999999',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+
+  // This Week
   weekCard: {
+    flexDirection: 'row',
     backgroundColor: '#FFFFFF',
-    marginTop: 8,
-    marginHorizontal: 0,
-    paddingVertical: 24,
-    paddingHorizontal: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: '#E65100',
-  },
-  weekCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-    gap: 8,
-  },
-  weekCardAccent: {
-    width: 4,
-    height: 18,
-    backgroundColor: '#E65100',
-    borderRadius: 2,
-  },
-  weekCardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1A1A1A',
-  },
-  weekGrid: {
-    flexDirection: 'row',
+    borderRadius: 14,
+    paddingVertical: 18,
   },
   weekItem: {
     flex: 1,
     alignItems: 'center',
   },
   weekValue: {
-    fontSize: 28,
+    fontSize: 18,
     fontWeight: '700',
     color: '#E65100',
   },
   weekLabel: {
     fontSize: 11,
     color: '#999999',
-    marginTop: 6,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    marginTop: 3,
     fontWeight: '600',
+  },
+  weekDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: '#F0F0F0',
   },
 
   // Empty state
-  emptyState: {
+  emptyCard: {
     alignItems: 'center',
-    paddingVertical: 48,
+    marginHorizontal: 16,
+    marginTop: 20,
+    paddingVertical: 36,
     backgroundColor: '#FFFFFF',
-    marginTop: 8,
+    borderRadius: 14,
   },
   emptyText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#999999',
-    marginTop: 12,
+    color: '#1A1A1A',
   },
   emptySubtext: {
     fontSize: 13,
-    color: '#BBBBBB',
+    color: '#999999',
     marginTop: 4,
   },
-  emptyActionBtn: {
-    marginTop: 16,
+  emptyBtn: {
+    marginTop: 20,
     backgroundColor: '#E65100',
     paddingVertical: 12,
     paddingHorizontal: 28,
-    borderRadius: 10,
+    borderRadius: 12,
   },
-  emptyActionText: {
+  emptyBtnText: {
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '600',
   },
 
-  // Activities section
-  activitiesSection: {
-    marginTop: 8,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#888888',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  activityCard: {
+  // Activity rows
+  activityRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    marginBottom: 2,
-    overflow: 'hidden',
-  },
-  activityAccent: {
-    width: 4,
-    alignSelf: 'stretch',
-    backgroundColor: '#E65100',
-  },
-  activityBody: {
-    flex: 1,
+    borderRadius: 14,
+    marginBottom: 6,
     paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
+    gap: 12,
   },
-  activityHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  activityIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(230, 81, 0, 0.08)',
     alignItems: 'center',
-    marginBottom: 10,
+    justifyContent: 'center',
   },
-  activityTypeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  activityContent: {
+    flex: 1,
   },
-  activityType: {
+  activityTitle: {
     fontSize: 15,
     fontWeight: '600',
     color: '#1A1A1A',
   },
-  activityDate: {
+  activityMeta: {
     fontSize: 13,
     color: '#999999',
+    marginTop: 2,
   },
-  activityMetricsRow: {
-    flexDirection: 'row',
-    gap: 24,
-  },
-  activityMetric: {},
-  metricValue: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1A1A1A',
-  },
-  metricLabel: {
+  activityDate: {
     fontSize: 12,
-    color: '#999999',
-    marginTop: 1,
+    color: '#BBBBBB',
+    marginRight: 4,
   },
 
-  // Settings
-  settingsSection: {
-    marginTop: 24,
-    marginHorizontal: 16,
+  // Menu / Settings card
+  card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 14,
     overflow: 'hidden',
   },
-  settingsRow: {
+  menuRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
     paddingHorizontal: 16,
-    gap: 12,
+    gap: 14,
   },
-  settingsText: {
+  menuText: {
     flex: 1,
     fontSize: 15,
     color: '#1A1A1A',
+    fontWeight: '500',
   },
-  settingsDivider: {
+  menuTextActive: {
+    color: '#E65100',
+    fontWeight: '600',
+  },
+  menuTextDanger: {
+    color: '#FF3B30',
+  },
+  menuDivider: {
     height: 1,
     backgroundColor: '#F0F0F0',
-    marginLeft: 46,
+    marginLeft: 48,
   },
-  eventModeHint: {
+  eventHint: {
     fontSize: 12,
     color: '#E65100',
-    paddingHorizontal: 20,
+    paddingHorizontal: 48,
     paddingBottom: 12,
-    marginTop: -4,
+    marginTop: -6,
   },
 
-  // Delete account
-  deleteAccountButton: {
+  // Delete
+  deleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
+    paddingVertical: 20,
     gap: 6,
   },
-  deleteAccountText: {
+  deleteText: {
     color: '#FF3B30',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
-    opacity: 0.8,
+    opacity: 0.6,
   },
 
-  // Event Name Modal
-  eventNameModalBackdrop: {
+  // Modal
+  modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 32,
   },
-  eventNameModalContainer: {
+  modalCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
     width: '100%',
     maxWidth: 340,
   },
-  eventNameModalTitle: {
+  modalTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: '#1A1A1A',
     marginBottom: 6,
   },
-  eventNameModalSubtitle: {
+  modalSubtitle: {
     fontSize: 14,
     color: '#666666',
     marginBottom: 20,
     lineHeight: 20,
   },
-  eventNameInput: {
+  modalInput: {
     borderWidth: 1,
     borderColor: '#E0E0E0',
-    borderRadius: 10,
+    borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16,
     color: '#1A1A1A',
-    backgroundColor: '#FAFAFA',
+    backgroundColor: '#F5F5F5',
     marginBottom: 20,
   },
-  eventNameModalActions: {
+  modalActions: {
     flexDirection: 'row',
     gap: 12,
   },
-  eventNameCancelBtn: {
+  modalCancelBtn: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: '#F0F0F0',
+    borderRadius: 12,
+    backgroundColor: '#F5F5F5',
     alignItems: 'center',
   },
-  eventNameCancelText: {
+  modalCancelText: {
     fontSize: 15,
     fontWeight: '600',
     color: '#666666',
   },
-  eventNameStartBtn: {
+  modalConfirmBtn: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: '#E65100',
     alignItems: 'center',
   },
-  eventNameStartBtnDisabled: {
+  modalConfirmDisabled: {
     backgroundColor: '#CCCCCC',
   },
-  eventNameStartText: {
+  modalConfirmText: {
     fontSize: 15,
     fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  modalDurationLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666666',
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  modalDurationRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
+  modalDurationBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#F0F0F0',
+    alignItems: 'center',
+  },
+  modalDurationBtnActive: {
+    backgroundColor: '#E65100',
+  },
+  modalDurationBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#666666',
+  },
+  modalDurationBtnTextActive: {
     color: '#FFFFFF',
   },
 });
