@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conqr - Privacy Policy</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.7;
+            color: #333;
+            background: #FAFAFA;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 24px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 48px;
+            padding-bottom: 32px;
+            border-bottom: 2px solid #E65100;
+        }
+        .header h1 {
+            font-size: 32px;
+            color: #E65100;
+            margin-bottom: 8px;
+        }
+        .header .subtitle {
+            color: #666;
+            font-size: 14px;
+        }
+        h2 {
+            font-size: 22px;
+            color: #1A1A1A;
+            margin-top: 36px;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #EEE;
+        }
+        h3 {
+            font-size: 17px;
+            color: #333;
+            margin-top: 20px;
+            margin-bottom: 8px;
+        }
+        p, li {
+            font-size: 15px;
+            color: #444;
+            margin-bottom: 12px;
+        }
+        ul {
+            padding-left: 24px;
+            margin-bottom: 16px;
+        }
+        li { margin-bottom: 6px; }
+        .highlight {
+            background: #FFF3E0;
+            border-left: 4px solid #E65100;
+            padding: 16px 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        .footer {
+            margin-top: 48px;
+            padding-top: 24px;
+            border-top: 1px solid #DDD;
+            text-align: center;
+            color: #999;
+            font-size: 13px;
+        }
+        a { color: #E65100; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Conqr Privacy Policy</h1>
+            <p class="subtitle">Last updated: February 8, 2026</p>
+        </div>
+
+        <div class="highlight">
+            <p><strong>Summary:</strong> Conqr collects your location data to let you claim territories, your profile info to identify you, and usage data to improve the app. We never sell your personal data to third parties.</p>
+        </div>
+
+        <h2>1. Introduction</h2>
+        <p>Conqr ("we," "our," or "us") is a mobile application that allows users to claim real-world territory by walking, running, or cycling. This Privacy Policy explains how we collect, use, store, and protect your information when you use the Conqr app ("the App").</p>
+        <p>By using Conqr, you agree to the collection and use of information as described in this policy. If you do not agree, please do not use the App.</p>
+
+        <h2>2. Information We Collect</h2>
+
+        <h3>2.1 Account Information</h3>
+        <p>When you sign up using Google OAuth, we collect:</p>
+        <ul>
+            <li><strong>Name</strong> (from your Google account)</li>
+            <li><strong>Email address</strong> (kept private, not displayed to other users)</li>
+            <li><strong>Profile photo URL</strong> (from your Google account)</li>
+        </ul>
+        <p>You may also provide:</p>
+        <ul>
+            <li><strong>Username</strong> (displayed publicly to other users)</li>
+            <li><strong>Bio</strong> (optional, displayed on your profile)</li>
+        </ul>
+
+        <h3>2.2 Location Data</h3>
+        <p>Conqr requires access to your device's GPS to function. We collect:</p>
+        <ul>
+            <li><strong>Real-time GPS coordinates</strong> during activity recording (latitude, longitude, altitude, speed)</li>
+            <li><strong>GPS paths</strong> that you trace while walking, running, or cycling</li>
+            <li><strong>Territory boundaries</strong> (polygon coordinates of areas you claim)</li>
+        </ul>
+        <div class="highlight">
+            <p><strong>Important:</strong> Location data is only collected while you are actively recording an activity. We do not track your location in the background when you are not using the App's recording feature.</p>
+        </div>
+
+        <h3>2.3 Activity Data</h3>
+        <p>When you record an activity, we collect:</p>
+        <ul>
+            <li>Activity type (walking, running, or cycling)</li>
+            <li>Duration and distance</li>
+            <li>GPS path of your route</li>
+            <li>Territories claimed during the activity</li>
+            <li>Date and time of the activity</li>
+        </ul>
+
+        <h3>2.4 Social Data</h3>
+        <p>If you use social features, we collect:</p>
+        <ul>
+            <li>Friend connections and friend requests</li>
+            <li>Posts, comments, and likes on the community feed</li>
+            <li>Shared activity and territory content</li>
+        </ul>
+
+        <h3>2.5 Usage and Analytics Data</h3>
+        <p>We collect anonymous usage data to improve the App:</p>
+        <ul>
+            <li>Screen views and feature usage patterns</li>
+            <li>Session duration and frequency</li>
+            <li>App crashes and error reports</li>
+            <li>Device platform (Android or iOS)</li>
+        </ul>
+
+        <h2>3. How We Use Your Information</h2>
+        <p>We use the information we collect to:</p>
+        <ul>
+            <li><strong>Provide core functionality</strong> - Track your movements, calculate territories, and display them on the map</li>
+            <li><strong>Identify you</strong> - Show your username and profile to other users on the map and leaderboard</li>
+            <li><strong>Enable social features</strong> - Allow you to connect with friends, share activities, and interact on the feed</li>
+            <li><strong>Sync across devices</strong> - Store your territories and activities so they persist across devices</li>
+            <li><strong>Improve the App</strong> - Analyze usage patterns to fix bugs and add features</li>
+            <li><strong>Display leaderboards</strong> - Rank users by territory area, distance, and activity count</li>
+        </ul>
+
+        <h2>4. Data Storage and Security</h2>
+        <ul>
+            <li>Your data is stored using <strong>Supabase</strong>, a secure cloud database platform, with servers protected by industry-standard encryption.</li>
+            <li>Data is also cached locally on your device using AsyncStorage for offline access.</li>
+            <li>Authentication is handled through Google OAuth with secure token management.</li>
+            <li>We use Row Level Security (RLS) policies to ensure users can only access their own private data.</li>
+        </ul>
+
+        <h2>5. Data Sharing</h2>
+        <p>We do <strong>not</strong> sell, rent, or trade your personal information to third parties.</p>
+        <p>Your data may be shared in the following limited circumstances:</p>
+        <ul>
+            <li><strong>Public profile information</strong> - Your username, avatar, territories, and activity stats are visible to other Conqr users</li>
+            <li><strong>Email address</strong> - Your email is kept private and is never shared with other users</li>
+            <li><strong>Service providers</strong> - We use Supabase for data storage and Google for authentication. These providers have their own privacy policies</li>
+            <li><strong>Legal requirements</strong> - We may disclose information if required by law or to protect our rights and safety</li>
+        </ul>
+
+        <h2>6. Your Rights and Choices</h2>
+        <p>You have the right to:</p>
+        <ul>
+            <li><strong>Access your data</strong> - View your profile, activities, and territories within the App</li>
+            <li><strong>Update your information</strong> - Edit your username, bio, and profile photo at any time</li>
+            <li><strong>Delete your account</strong> - Contact us to request complete deletion of your account and associated data</li>
+            <li><strong>Control location access</strong> - Revoke location permissions through your device settings at any time (note: the App's core features require location access to function)</li>
+            <li><strong>Opt out of analytics</strong> - Contact us if you wish to opt out of analytics data collection</li>
+        </ul>
+
+        <h2>7. Children's Privacy</h2>
+        <p>Conqr is not intended for children under the age of 13. We do not knowingly collect personal information from children under 13. If we learn that we have collected information from a child under 13, we will take steps to delete it promptly.</p>
+
+        <h2>8. Data Retention</h2>
+        <p>We retain your data for as long as your account is active. If you delete your account, we will delete your personal data within 30 days, except where we are required to retain it for legal or security purposes.</p>
+
+        <h2>9. Third-Party Services</h2>
+        <p>Conqr uses the following third-party services:</p>
+        <ul>
+            <li><strong>Google OAuth</strong> - For authentication (<a href="https://policies.google.com/privacy" target="_blank">Google Privacy Policy</a>)</li>
+            <li><strong>Supabase</strong> - For data storage and backend services (<a href="https://supabase.com/privacy" target="_blank">Supabase Privacy Policy</a>)</li>
+            <li><strong>Expo / EAS</strong> - For app building and over-the-air updates (<a href="https://expo.dev/privacy" target="_blank">Expo Privacy Policy</a>)</li>
+            <li><strong>OpenStreetMap</strong> - For map tiles displayed in the App (<a href="https://wiki.osmfoundation.org/wiki/Privacy_Policy" target="_blank">OSM Privacy Policy</a>)</li>
+        </ul>
+
+        <h2>10. Changes to This Policy</h2>
+        <p>We may update this Privacy Policy from time to time. We will notify you of significant changes by updating the "Last updated" date at the top of this page. Continued use of the App after changes constitutes acceptance of the updated policy.</p>
+
+        <h2>11. Contact Us</h2>
+        <p>If you have questions about this Privacy Policy or wish to exercise your data rights, please contact us at:</p>
+        <ul>
+            <li><strong>Email:</strong> conqrapp@gmail.com</li>
+        </ul>
+
+        <div class="footer">
+            <p>&copy; 2026 Conqr. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
