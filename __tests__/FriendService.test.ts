@@ -5,13 +5,12 @@ const mockSupabase = supabase as any;
 
 describe('FriendService', () => {
   describe('sendFriendRequest', () => {
-    // Helper: mock a chainable select().eq().eq().limit() query
-    const mockEqChain = (data: any[], error: any = null) => {
+    // Helper: mock a chainable select().or().limit() query (new pattern)
+    const mockOrChain = (data: any[], error: any = null) => {
       const result = { data, error };
       const mockLimit = jest.fn(() => result);
-      const mockEq2 = jest.fn(() => ({ limit: mockLimit }));
-      const mockEq1 = jest.fn(() => ({ eq: mockEq2 }));
-      const mockSelect = jest.fn(() => ({ eq: mockEq1 }));
+      const mockOr = jest.fn(() => ({ limit: mockLimit }));
+      const mockSelect = jest.fn(() => ({ or: mockOr }));
       return { select: mockSelect };
     };
 
@@ -21,10 +20,9 @@ describe('FriendService', () => {
     });
 
     it('should create a pending friendship', async () => {
-      // Mock: forward check (none found), reverse check (none found), then insert
+      // Mock: or check (none found), then insert
       mockSupabase.from
-        .mockReturnValueOnce(mockEqChain([]))  // forward check
-        .mockReturnValueOnce(mockEqChain([]))  // reverse check
+        .mockReturnValueOnce(mockOrChain([]))  // duplicate check
         .mockReturnValueOnce({                 // insert
           insert: jest.fn(() => ({
             select: jest.fn(() => ({
@@ -50,20 +48,10 @@ describe('FriendService', () => {
       expect(result.addresseeId).toBe('other-user');
     });
 
-    it('should prevent duplicate requests (forward direction)', async () => {
-      // Mock: forward check finds existing
+    it('should prevent duplicate requests', async () => {
+      // Mock: or check finds existing
       mockSupabase.from
-        .mockReturnValueOnce(mockEqChain([{ id: 'existing' }]));
-
-      await expect(FriendService.sendFriendRequest('other-user'))
-        .rejects.toThrow('Friend request already exists');
-    });
-
-    it('should prevent duplicate requests (reverse direction)', async () => {
-      // Mock: forward check empty, reverse check finds existing
-      mockSupabase.from
-        .mockReturnValueOnce(mockEqChain([]))       // forward: empty
-        .mockReturnValueOnce(mockEqChain([{ id: 'existing' }]));  // reverse: found
+        .mockReturnValueOnce(mockOrChain([{ id: 'existing' }]));
 
       await expect(FriendService.sendFriendRequest('other-user'))
         .rejects.toThrow('Friend request already exists');
@@ -71,7 +59,7 @@ describe('FriendService', () => {
 
     it('should prevent request when already friends', async () => {
       mockSupabase.from
-        .mockReturnValueOnce(mockEqChain([{ id: 'existing', status: 'accepted' }]));
+        .mockReturnValueOnce(mockOrChain([{ id: 'existing', status: 'accepted' }]));
 
       await expect(FriendService.sendFriendRequest('other-user'))
         .rejects.toThrow('Friend request already exists');
@@ -79,8 +67,7 @@ describe('FriendService', () => {
 
     it('should throw on insert error', async () => {
       mockSupabase.from
-        .mockReturnValueOnce(mockEqChain([]))  // forward check
-        .mockReturnValueOnce(mockEqChain([]))  // reverse check
+        .mockReturnValueOnce(mockOrChain([]))  // duplicate check
         .mockReturnValueOnce({                 // insert fails
           insert: jest.fn(() => ({
             select: jest.fn(() => ({
@@ -111,15 +98,17 @@ describe('FriendService', () => {
         error: null,
       }));
       const mockSelect = jest.fn(() => ({ single: mockSingle }));
-      const mockEq = jest.fn(() => ({ select: mockSelect }));
-      const mockUpdate = jest.fn(() => ({ eq: mockEq }));
+      const mockEq2 = jest.fn(() => ({ select: mockSelect }));
+      const mockEq1 = jest.fn(() => ({ eq: mockEq2 }));
+      const mockUpdate = jest.fn(() => ({ eq: mockEq1 }));
       mockSupabase.from.mockReturnValueOnce({ update: mockUpdate });
 
       const result = await FriendService.acceptFriendRequest('fs-1');
       expect(result.status).toBe('accepted');
       expect(result.id).toBe('fs-1');
       expect(mockUpdate).toHaveBeenCalledWith({ status: 'accepted' });
-      expect(mockEq).toHaveBeenCalledWith('id', 'fs-1');
+      expect(mockEq1).toHaveBeenCalledWith('id', 'fs-1');
+      expect(mockEq2).toHaveBeenCalledWith('addressee_id', 'test-user-id');
     });
 
     it('should throw on error', async () => {
@@ -128,8 +117,9 @@ describe('FriendService', () => {
         error: { message: 'Update failed' },
       }));
       const mockSelect = jest.fn(() => ({ single: mockSingle }));
-      const mockEq = jest.fn(() => ({ select: mockSelect }));
-      const mockUpdate = jest.fn(() => ({ eq: mockEq }));
+      const mockEq2 = jest.fn(() => ({ select: mockSelect }));
+      const mockEq1 = jest.fn(() => ({ eq: mockEq2 }));
+      const mockUpdate = jest.fn(() => ({ eq: mockEq1 }));
       mockSupabase.from.mockReturnValueOnce({ update: mockUpdate });
 
       await expect(FriendService.acceptFriendRequest('fs-1'))
@@ -151,8 +141,9 @@ describe('FriendService', () => {
         error: null,
       }));
       const mockSelect = jest.fn(() => ({ single: mockSingle }));
-      const mockEq = jest.fn(() => ({ select: mockSelect }));
-      const mockUpdate = jest.fn(() => ({ eq: mockEq }));
+      const mockEq2 = jest.fn(() => ({ select: mockSelect }));
+      const mockEq1 = jest.fn(() => ({ eq: mockEq2 }));
+      const mockUpdate = jest.fn(() => ({ eq: mockEq1 }));
       mockSupabase.from.mockReturnValueOnce({ update: mockUpdate });
 
       const result = await FriendService.rejectFriendRequest('fs-1');
@@ -166,8 +157,9 @@ describe('FriendService', () => {
         error: { message: 'Update failed' },
       }));
       const mockSelect = jest.fn(() => ({ single: mockSingle }));
-      const mockEq = jest.fn(() => ({ select: mockSelect }));
-      const mockUpdate = jest.fn(() => ({ eq: mockEq }));
+      const mockEq2 = jest.fn(() => ({ select: mockSelect }));
+      const mockEq1 = jest.fn(() => ({ eq: mockEq2 }));
+      const mockUpdate = jest.fn(() => ({ eq: mockEq1 }));
       mockSupabase.from.mockReturnValueOnce({ update: mockUpdate });
 
       await expect(FriendService.rejectFriendRequest('fs-bad'))
@@ -177,7 +169,8 @@ describe('FriendService', () => {
 
   describe('removeFriend', () => {
     it('should delete the friendship', async () => {
-      const mockEq = jest.fn(() => ({ error: null }));
+      const mockOr = jest.fn(() => ({ error: null }));
+      const mockEq = jest.fn(() => ({ or: mockOr }));
       const mockDelete = jest.fn(() => ({ eq: mockEq }));
       mockSupabase.from.mockReturnValueOnce({ delete: mockDelete });
 
@@ -186,7 +179,8 @@ describe('FriendService', () => {
     });
 
     it('should throw on error', async () => {
-      const mockEq = jest.fn(() => ({ error: { message: 'Delete failed' } }));
+      const mockOr = jest.fn(() => ({ error: { message: 'Delete failed' } }));
+      const mockEq = jest.fn(() => ({ or: mockOr }));
       const mockDelete = jest.fn(() => ({ eq: mockEq }));
       mockSupabase.from.mockReturnValueOnce({ delete: mockDelete });
 
@@ -409,39 +403,27 @@ describe('FriendService', () => {
   });
 
   describe('getFriendshipStatus', () => {
-    // Helper: mock a chainable select().eq().eq().limit() query
-    const mockEqChain = (data: any[] | null, error: any = null) => {
+    // Helper: mock a chainable select().or().limit() query
+    const mockOrChain = (data: any[] | null, error: any = null) => {
       const result = { data, error };
       const mockLimit = jest.fn(() => result);
-      const mockEq2 = jest.fn(() => ({ limit: mockLimit }));
-      const mockEq1 = jest.fn(() => ({ eq: mockEq2 }));
-      const mockSelect = jest.fn(() => ({ eq: mockEq1 }));
+      const mockOr = jest.fn(() => ({ limit: mockLimit }));
+      const mockSelect = jest.fn(() => ({ or: mockOr }));
       return { select: mockSelect };
     };
 
     it('should return none when no friendship exists', async () => {
       mockSupabase.from
-        .mockReturnValueOnce(mockEqChain([]))   // forward: empty
-        .mockReturnValueOnce(mockEqChain([]));  // reverse: empty
+        .mockReturnValueOnce(mockOrChain([]));
 
       const result = await FriendService.getFriendshipStatus('user-a', 'user-b');
       expect(result.status).toBe('none');
       expect(result.friendshipId).toBeUndefined();
     });
 
-    it('should return accepted when friends (forward direction)', async () => {
+    it('should return accepted when friends', async () => {
       mockSupabase.from
-        .mockReturnValueOnce(mockEqChain([{ id: 'fs-1', status: 'accepted' }]));
-
-      const result = await FriendService.getFriendshipStatus('user-a', 'user-b');
-      expect(result.status).toBe('accepted');
-      expect(result.friendshipId).toBe('fs-1');
-    });
-
-    it('should return accepted when friends (reverse direction)', async () => {
-      mockSupabase.from
-        .mockReturnValueOnce(mockEqChain([]))  // forward: empty
-        .mockReturnValueOnce(mockEqChain([{ id: 'fs-1', status: 'accepted' }]));  // reverse: found
+        .mockReturnValueOnce(mockOrChain([{ id: 'fs-1', status: 'accepted' }]));
 
       const result = await FriendService.getFriendshipStatus('user-a', 'user-b');
       expect(result.status).toBe('accepted');
@@ -450,7 +432,7 @@ describe('FriendService', () => {
 
     it('should return pending for pending request', async () => {
       mockSupabase.from
-        .mockReturnValueOnce(mockEqChain([{ id: 'fs-2', status: 'pending' }]));
+        .mockReturnValueOnce(mockOrChain([{ id: 'fs-2', status: 'pending' }]));
 
       const result = await FriendService.getFriendshipStatus('user-a', 'user-b');
       expect(result.status).toBe('pending');
@@ -459,7 +441,7 @@ describe('FriendService', () => {
 
     it('should return rejected for rejected request', async () => {
       mockSupabase.from
-        .mockReturnValueOnce(mockEqChain([{ id: 'fs-3', status: 'rejected' }]));
+        .mockReturnValueOnce(mockOrChain([{ id: 'fs-3', status: 'rejected' }]));
 
       const result = await FriendService.getFriendshipStatus('user-a', 'user-b');
       expect(result.status).toBe('rejected');
@@ -468,8 +450,7 @@ describe('FriendService', () => {
 
     it('should return none on error', async () => {
       mockSupabase.from
-        .mockReturnValueOnce(mockEqChain(null, { message: 'error' }))
-        .mockReturnValueOnce(mockEqChain(null, { message: 'error' }));
+        .mockReturnValueOnce(mockOrChain(null, { message: 'error' }));
 
       const result = await FriendService.getFriendshipStatus('user-a', 'user-b');
       expect(result.status).toBe('none');
@@ -477,8 +458,7 @@ describe('FriendService', () => {
 
     it('should return none when data is null', async () => {
       mockSupabase.from
-        .mockReturnValueOnce(mockEqChain(null))
-        .mockReturnValueOnce(mockEqChain(null));
+        .mockReturnValueOnce(mockOrChain(null));
 
       const result = await FriendService.getFriendshipStatus('user-a', 'user-b');
       expect(result.status).toBe('none');
@@ -486,8 +466,7 @@ describe('FriendService', () => {
 
     it('should return none when data array is empty', async () => {
       mockSupabase.from
-        .mockReturnValueOnce(mockEqChain([]))
-        .mockReturnValueOnce(mockEqChain([]));
+        .mockReturnValueOnce(mockOrChain([]));
 
       const result = await FriendService.getFriendshipStatus('user-a', 'user-b');
       expect(result.status).toBe('none');

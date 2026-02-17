@@ -63,7 +63,7 @@ describe('ShareService', () => {
             expect(call.message).toContain('5.23km');
             expect(call.message).toContain('30m 0s');
             expect(call.message).toContain('min/km');
-            expect(call.message).toContain('Shared via Conqr');
+            expect(call.message).toContain('Download Conqr Beta:');
         });
 
         it('should include territory info when provided', async () => {
@@ -159,7 +159,7 @@ describe('ShareService', () => {
             expect(call.message).toContain('Central Park');
             expect(call.message).toContain('1.50 ha');
             expect(call.message).toContain('500m');
-            expect(call.message).toContain('Shared via Conqr');
+            expect(call.message).toContain('Download Conqr Beta:');
         });
 
         it('should handle unnamed territory', async () => {
@@ -202,7 +202,7 @@ describe('ShareService', () => {
             const call = (Share.share as jest.Mock).mock.calls[0][0];
             expect(call.title).toBe('Conqr Post');
             expect(call.message).toContain('Great run today!');
-            expect(call.message).toContain('Shared via Conqr');
+            expect(call.message).toContain('Download Conqr Beta:');
         });
 
         it('should include activity share text for activity posts', async () => {
@@ -226,7 +226,7 @@ describe('ShareService', () => {
             await ShareService.sharePost(post);
 
             const call = (Share.share as jest.Mock).mock.calls[0][0];
-            expect(call.message).toContain('Shared via Conqr');
+            expect(call.message).toContain('Download Conqr Beta:');
         });
 
         it('should handle Share.share rejection gracefully', async () => {
