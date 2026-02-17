@@ -1,10 +1,8 @@
 import { supabase } from '../lib/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const DEV_EMAIL = 'arav_krishnan@ug29.mesaschool.co';
 const EVENT_JOINED_KEY = 'conqr_joined_event_id';
 const MAX_PAST_EVENTS = 20;
-const MAX_EVENT_PARTICIPANTS = 100;
 
 // ── Caches ────────────────────────────────────────────────────────────────────
 let cachedEventMode: boolean | null = null;
@@ -50,8 +48,25 @@ function participantPrefix(eventId: string): string {
 // ── Service ───────────────────────────────────────────────────────────────────
 
 export const EventModeService = {
+    async isAdminUser(): Promise<boolean> {
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session?.user) return false;
+            const { data } = await supabase
+                .from('admin_users')
+                .select('user_id')
+                .eq('user_id', session.user.id)
+                .maybeSingle();
+            return !!data;
+        } catch {
+            return false;
+        }
+    },
+
+    /** @deprecated Use isAdminUser() instead */
     isDevUser(email: string | undefined | null): boolean {
-        return !!email && email.toLowerCase() === DEV_EMAIL.toLowerCase();
+        // Kept for backward compat in UI; server enforces via admin_users table
+        return !!email && email.toLowerCase() === 'arav_krishnan@ug29.mesaschool.co';
     },
 
     /** Compute time remaining for the current event. Returns null if no active event or no duration set. */
@@ -213,36 +228,31 @@ export const EventModeService = {
     },
 
     /**
-     * Join the current event. Writes a single row — safe for concurrent joins.
+     * Join the current event. Uses server-side RPC for atomic participant cap enforcement.
      */
     async joinEvent(userId: string): Promise<boolean> {
         try {
             const currentEvent = await this.getCurrentEvent();
             if (!currentEvent) return false;
 
-            // Check if event time has expired
+            // Check if event time has expired (client-side fast check)
             const timeRemaining = this.getEventTimeRemaining(currentEvent);
             if (timeRemaining?.isExpired) {
                 throw new Error('Event has ended');
             }
 
-            // Force fresh participant count to avoid race conditions at capacity
-            cachedParticipants = null;
-            participantsCacheTimestamp = 0;
+            // Use server-side RPC for atomic join with cap enforcement
+            const { data, error: rpcError } = await supabase.rpc('join_event', {
+                p_event_id: currentEvent.id,
+                p_user_id: userId,
+            });
 
-            // Enforce participant cap
-            const participants = await this.getEventParticipants(currentEvent.id);
-            if (participants.length >= MAX_EVENT_PARTICIPANTS && !participants.includes(userId)) {
-                throw new Error('Event is full');
-            }
-
-            // Write a dedicated row on the server first (idempotent upsert)
-            const { error: upsertError } = await supabase
-                .from('app_settings')
-                .upsert({ key: participantKey(currentEvent.id, userId), value: true });
-
-            if (upsertError) {
-                console.error('Failed to join event on server:', upsertError);
+            if (rpcError) {
+                const msg = rpcError.message || '';
+                if (msg.includes('full')) throw new Error('Event is full');
+                if (msg.includes('ended')) throw new Error('Event has ended');
+                if (msg.includes('not found')) throw new Error('Event has ended');
+                console.error('Failed to join event on server:', rpcError);
                 throw new Error('Failed to join event. Please try again.');
             }
 
