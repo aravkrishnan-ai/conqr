@@ -108,7 +108,7 @@ function handleTrackingPoint(point: GPSPoint) {
     if (_path.length > 0) {
         const last = _path[_path.length - 1];
         const timeDelta = (point.timestamp - last.timestamp) / 1000;
-        if (timeDelta > 0 && timeDelta < 120) {
+        if (timeDelta > 0) {
             try {
                 const d = getDistance(
                     { latitude: last.lat, longitude: last.lng },
@@ -203,10 +203,11 @@ function handleTrackingPoint(point: GPSPoint) {
                     p => now - p.time < ROLLING_SPEED_WINDOW_MS
                 );
                 // Compute rolling speed: total distance in window / time span
+                // Exclude the oldest point's distance — it was accumulated before the window start
                 if (_rollingSpeedPoints.length >= 2) {
-                    const windowDist = _rollingSpeedPoints.reduce((s, p) => s + p.dist, 0);
+                    const windowDist = _rollingSpeedPoints.slice(1).reduce((s, p) => s + p.dist, 0);
                     const windowTime = (now - _rollingSpeedPoints[0].time) / 1000;
-                    if (windowTime > 0) {
+                    if (windowTime > 0 && windowDist > 0) {
                         _rollingSpeed = windowDist / windowTime;
                     }
                 }
@@ -245,8 +246,14 @@ export const TrackingStore = {
     get startTime() { return _startTime; },
     get path() { return _path; },
     get runningDistance() { return _runningDistance; },
-    /** Rolling speed (m/s) computed from distance covered in last ~12 seconds */
-    get rollingSpeed() { return _rollingSpeed; },
+    /** Rolling speed (m/s) computed from distance covered in last ~12 seconds.
+     *  Returns 0 if the most recent data point is older than the rolling window (stale). */
+    get rollingSpeed() {
+        if (_rollingSpeedPoints.length === 0) return 0;
+        const newest = _rollingSpeedPoints[_rollingSpeedPoints.length - 1];
+        if (Date.now() - newest.time > ROLLING_SPEED_WINDOW_MS) return 0;
+        return _rollingSpeed;
+    },
 
     /** Subscribe to state changes. Returns unsubscribe function. */
     subscribe(listener: () => void): () => void {

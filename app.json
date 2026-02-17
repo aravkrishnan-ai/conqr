@@ -20,7 +20,8 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Conqr needs your location to track your movements and claim territories.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Conqr needs your location to track your movements and claim territories even when the app is in the background.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": ["location"]
       }
     },
     "android": {
