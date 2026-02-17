@@ -33,6 +33,9 @@
         "buildType": "app-bundle",
         "credentialsSource": "local"
       },
+      "ios": {
+        "autoIncrement": true
+      },
       "channel": "production"
     }
   },
@@ -42,6 +45,8 @@
         "serviceAccountKeyPath": "./google-play-service-account.json",
         "track": "internal",
         "releaseStatus": "draft"
+      },
+      "ios": {
       }
     }
   }

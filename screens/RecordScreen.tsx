@@ -17,6 +17,7 @@ import { supabase } from '../lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import { useScreenTracking } from '../lib/useScreenTracking';
 import { AnalyticsService } from '../services/AnalyticsService';
+import { EventModeService } from '../services/EventModeService';
 import * as Haptics from 'expo-haptics';
 import { getDistance } from 'geolib';
 import { Crosshair } from 'lucide-react-native';
@@ -62,6 +63,7 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
 
   const [distanceToStart, setDistanceToStart] = React.useState<number | null>(null);
   const [territoryNameInput, setTerritoryNameInput] = React.useState('');
+  const [inEventMode, setInEventMode] = React.useState(false);
   const pendingTerritoryRef = React.useRef<Territory | null>(null);
 
   const mapRef = React.useRef<MapContainerHandle>(null);
@@ -81,6 +83,11 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
       }
     };
     loadTerritories();
+  }, []);
+
+  // Check if user is in event mode
+  React.useEffect(() => {
+    EventModeService.isUserInEventMode().then(setInEventMode).catch(() => {});
   }, []);
 
   // Subscribe to TrackingStore for persistent tracking state
@@ -150,9 +157,13 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
         const storePath = TrackingStore.path;
         const dist = TrackingStore.runningDistance;
 
-        // Calculate pace from accumulated distance and elapsed time
-        if (dist > 0 && elapsed > 0) {
-          setCurrentSpeed(dist / elapsed); // meters per second
+        // Use rolling speed from TrackingStore for real-time pace
+        // Falls back to cumulative average only when rolling speed not yet available
+        const rolling = TrackingStore.rollingSpeed;
+        if (rolling > 0) {
+          setCurrentSpeed(rolling);
+        } else if (dist > 0 && elapsed > 0) {
+          setCurrentSpeed(dist / elapsed);
         }
 
         // Distance to start for loop closure indicator
@@ -217,7 +228,11 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
 
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const userId = session?.user?.id || 'anonymous';
+        const userId = session?.user?.id;
+        if (!userId) {
+          Alert.alert('Sign In Required', 'Please sign in to save activities.');
+          return;
+        }
         const activityId = uuidv4();
 
         const distance = ActivityService.calculateDistance(currentPath);
@@ -274,7 +289,7 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
                 if (idx >= 0) updated[idx] = mod;
               }
               // Add new territory
-              updated.unshift(savedTerritory!);
+              if (savedTerritory) updated.unshift(savedTerritory);
               return updated;
             });
           }
@@ -367,8 +382,8 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
     pendingTerritoryRef.current = null;
   };
 
-  const handleCloseSuccessModal = () => {
-    saveTerritoryName();
+  const handleCloseSuccessModal = async () => {
+    await saveTerritoryName();
     setSuccessModal(prev => ({ ...prev, visible: false }));
   };
 
@@ -444,10 +459,17 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
                 </View>
               </TouchableOpacity>
             )}
+            {isTracking && inEventMode && (
+              <View style={styles.eventModeBanner}>
+                <Trophy color="#FFFFFF" size={14} />
+                <Text style={styles.eventModeBannerText}>Event Mode · No territory overlap</Text>
+              </View>
+            )}
             {isTracking && distanceToStart !== null && (
               <View style={[
                 styles.distanceToStartPill,
                 distanceToStart <= 200 && styles.distanceToStartClose,
+                inEventMode && { top: 44 },
               ]}>
                 <Text style={[
                   styles.distanceToStartText,
@@ -640,8 +662,8 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
             <View style={styles.successButtonRow}>
               <TouchableOpacity
                 style={styles.successShareButton}
-                onPress={() => {
-                  saveTerritoryName();
+                onPress={async () => {
+                  await saveTerritoryName();
                   setSuccessModal(prev => ({ ...prev, visible: false }));
                   setShowShareModal(true);
                 }}
@@ -720,6 +742,24 @@ const styles = StyleSheet.create({
   locationErrorActionText: {
     color: '#FFFFFF',
     fontSize: 12,
+    fontWeight: '600',
+  },
+  eventModeBanner: {
+    position: 'absolute',
+    top: 12,
+    alignSelf: 'center',
+    backgroundColor: '#E65100',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    zIndex: 10,
+  },
+  eventModeBannerText: {
+    color: '#FFFFFF',
+    fontSize: 13,
     fontWeight: '600',
   },
   distanceToStartPill: {

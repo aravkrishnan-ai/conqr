@@ -29,27 +29,17 @@ export const FriendService = {
             throw new Error('Cannot send friend request to yourself');
         }
 
-        // Check for existing friendship in forward direction
-        const { data: forward } = await supabase
+        // Check for existing friendship in either direction
+        const { data: existing } = await supabase
             .from('friendships')
             .select('id')
-            .eq('requester_id', requesterId)
-            .eq('addressee_id', addresseeId)
+            .or(
+                `and(requester_id.eq.${requesterId},addressee_id.eq.${addresseeId}),` +
+                `and(requester_id.eq.${addresseeId},addressee_id.eq.${requesterId})`
+            )
             .limit(1);
 
-        if (forward && forward.length > 0) {
-            throw new Error('Friend request already exists');
-        }
-
-        // Check for existing friendship in reverse direction
-        const { data: reverse } = await supabase
-            .from('friendships')
-            .select('id')
-            .eq('requester_id', addresseeId)
-            .eq('addressee_id', requesterId)
-            .limit(1);
-
-        if (reverse && reverse.length > 0) {
+        if (existing && existing.length > 0) {
             throw new Error('Friend request already exists');
         }
 
@@ -68,10 +58,14 @@ export const FriendService = {
     },
 
     async acceptFriendRequest(friendshipId: string): Promise<Friendship> {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) throw new Error('Must be signed in');
+
         const { data, error } = await supabase
             .from('friendships')
             .update({ status: 'accepted' })
             .eq('id', friendshipId)
+            .eq('addressee_id', session.user.id)
             .select()
             .single();
 
@@ -80,10 +74,14 @@ export const FriendService = {
     },
 
     async rejectFriendRequest(friendshipId: string): Promise<Friendship> {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) throw new Error('Must be signed in');
+
         const { data, error } = await supabase
             .from('friendships')
             .update({ status: 'rejected' })
             .eq('id', friendshipId)
+            .eq('addressee_id', session.user.id)
             .select()
             .single();
 
@@ -92,10 +90,14 @@ export const FriendService = {
     },
 
     async removeFriend(friendshipId: string): Promise<void> {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) throw new Error('Must be signed in');
+
         const { error } = await supabase
             .from('friendships')
             .delete()
-            .eq('id', friendshipId);
+            .eq('id', friendshipId)
+            .or(`requester_id.eq.${session.user.id},addressee_id.eq.${session.user.id}`);
 
         if (error) throw error;
     },
@@ -177,33 +179,24 @@ export const FriendService = {
     },
 
     async getFriendshipStatus(userId: string, otherUserId: string): Promise<{ status: FriendshipStatus; friendshipId?: string }> {
-        // Check forward direction
-        const { data: forward } = await supabase
+        const { data, error } = await supabase
             .from('friendships')
             .select('id, status')
-            .eq('requester_id', userId)
-            .eq('addressee_id', otherUserId)
+            .or(
+                `and(requester_id.eq.${userId},addressee_id.eq.${otherUserId}),` +
+                `and(requester_id.eq.${otherUserId},addressee_id.eq.${userId})`
+            )
             .limit(1);
 
-        if (forward && forward.length > 0) {
-            return {
-                status: forward[0].status as FriendshipStatus,
-                friendshipId: forward[0].id,
-            };
+        if (error) {
+            console.error('Failed to check friendship status:', error);
+            return { status: 'none' };
         }
 
-        // Check reverse direction
-        const { data: reverse } = await supabase
-            .from('friendships')
-            .select('id, status')
-            .eq('requester_id', otherUserId)
-            .eq('addressee_id', userId)
-            .limit(1);
-
-        if (reverse && reverse.length > 0) {
+        if (data && data.length > 0) {
             return {
-                status: reverse[0].status as FriendshipStatus,
-                friendshipId: reverse[0].id,
+                status: data[0].status as FriendshipStatus,
+                friendshipId: data[0].id,
             };
         }
 

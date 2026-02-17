@@ -75,6 +75,11 @@ let _recentPositions: { lat: number; lng: number; time: number }[] = [];
 let _locationUnsubscribe: (() => void) | null = null;
 let _listeners: Set<() => void> = new Set();
 
+// Rolling speed for real-time pace display (distance over last N seconds)
+const ROLLING_SPEED_WINDOW_MS = 12000; // 12 second rolling window
+let _rollingSpeedPoints: { dist: number; time: number }[] = [];
+let _rollingSpeed = 0;
+
 // Kalman state
 let _kLat: KalmanState | null = null;
 let _kLng: KalmanState | null = null;
@@ -189,11 +194,42 @@ function handleTrackingPoint(point: GPSPoint) {
             if (d < minDist) return;
             if (d > 0 && d < MAX_SEGMENT_DISTANCE_M) {
                 _runningDistance += d;
+
+                // ── Update rolling speed for real-time pace ──
+                const now = Date.now();
+                _rollingSpeedPoints.push({ dist: d, time: now });
+                // Prune old entries outside the window
+                _rollingSpeedPoints = _rollingSpeedPoints.filter(
+                    p => now - p.time < ROLLING_SPEED_WINDOW_MS
+                );
+                // Compute rolling speed: total distance in window / time span
+                if (_rollingSpeedPoints.length >= 2) {
+                    const windowDist = _rollingSpeedPoints.reduce((s, p) => s + p.dist, 0);
+                    const windowTime = (now - _rollingSpeedPoints[0].time) / 1000;
+                    if (windowTime > 0) {
+                        _rollingSpeed = windowDist / windowTime;
+                    }
+                }
             }
         } catch { /* add point on error */ }
     }
 
-    _path = [..._path, smoothedPoint];
+    // ── 7. Compute speed for points missing device speed ──
+    if (smoothedPoint.speed === null && _path.length > 0) {
+        const last = _path[_path.length - 1];
+        const timeDelta = (smoothedPoint.timestamp - last.timestamp) / 1000;
+        if (timeDelta > 0) {
+            try {
+                const d = getDistance(
+                    { latitude: last.lat, longitude: last.lng },
+                    { latitude: smoothedPoint.lat, longitude: smoothedPoint.lng }
+                );
+                smoothedPoint.speed = d / timeDelta;
+            } catch { /* leave as null */ }
+        }
+    }
+
+    _path.push(smoothedPoint);
     notifyListeners();
 }
 
@@ -209,6 +245,8 @@ export const TrackingStore = {
     get startTime() { return _startTime; },
     get path() { return _path; },
     get runningDistance() { return _runningDistance; },
+    /** Rolling speed (m/s) computed from distance covered in last ~12 seconds */
+    get rollingSpeed() { return _rollingSpeed; },
 
     /** Subscribe to state changes. Returns unsubscribe function. */
     subscribe(listener: () => void): () => void {
@@ -224,6 +262,8 @@ export const TrackingStore = {
         _path = [];
         _runningDistance = 0;
         _recentPositions = [];
+        _rollingSpeedPoints = [];
+        _rollingSpeed = 0;
         resetKalmanState();
 
         // Force fresh event mode check at activity boundaries (#4)
@@ -257,6 +297,8 @@ export const TrackingStore = {
         _path = [];
         _runningDistance = 0;
         _recentPositions = [];
+        _rollingSpeedPoints = [];
+        _rollingSpeed = 0;
         resetKalmanState();
 
         // Clean up the tracking location subscription
@@ -278,6 +320,8 @@ export const TrackingStore = {
         _path = [];
         _runningDistance = 0;
         _recentPositions = [];
+        _rollingSpeedPoints = [];
+        _rollingSpeed = 0;
         resetKalmanState();
 
         if (_locationUnsubscribe) {

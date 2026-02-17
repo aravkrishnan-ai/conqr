@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl, Image, Modal, Dimensions, Share } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl, Image, Modal, Dimensions, Share, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Trophy, User, Crown, Medal, Share2, X, Link, Image as ImageIcon, Zap, Calendar, ChevronDown, ChevronRight } from 'lucide-react-native';
@@ -140,14 +140,20 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
   const [hasJoinedEvent, setHasJoinedEvent] = useState(false);
   const [joiningEvent, setJoiningEvent] = useState(false);
   const [eventParticipantCount, setEventParticipantCount] = useState(0);
+  const [eventCountdown, setEventCountdown] = useState<string | null>(null);
+  const [eventExpired, setEventExpired] = useState(false);
   // Cache all territories for event leaderboard building
   const allTerritoriesRef = useRef<{ ownerId: string; ownerName?: string; area: number; claimedAt: number }[]>([]);
 
-  const tabRef = useRef<LeaderboardTab>(tab);
-  tabRef.current = tab;
+  // Fetch generation counter — incremented on every new fetch so stale responses are discarded
+  const fetchGenRef = useRef(0);
+  const lastFetchTimeRef = useRef(0);
 
-  const fetchData = useCallback(async (showRefreshing = false) => {
+  const fetchLeaderboard = useCallback(async (activeTab: LeaderboardTab, showRefreshing = false) => {
+    const fetchId = ++fetchGenRef.current;
     if (showRefreshing) setRefreshing(true);
+    else setLoading(true);
+
     try {
       const [session, eventMode, currentEvt, pastEvts, joined] = await Promise.all([
         supabase.auth.getSession(),
@@ -157,6 +163,9 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
         EventModeService.hasJoinedCurrentEvent(),
       ]);
 
+      // Stale guard: if a newer fetch was started, discard this result
+      if (fetchId !== fetchGenRef.current) return;
+
       if (session.data.session?.user) {
         setCurrentUserId(session.data.session.user.id);
       }
@@ -165,9 +174,11 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
       setPastEvents(pastEvts);
       setHasJoinedEvent(joined);
 
-      if (tabRef.current === 'events') {
+      if (activeTab === 'events') {
         // Load all territories for event leaderboard
         const territories = await TerritoryService.getLeaderboardTerritories();
+        if (fetchId !== fetchGenRef.current) return;
+
         allTerritoriesRef.current = territories.map(t => ({
           ownerId: t.ownerId,
           ownerName: t.ownerName,
@@ -183,6 +194,7 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
               .from('users')
               .select('id, avatar_url')
               .in('id', uniqueUserIds);
+            if (fetchId !== fetchGenRef.current) return;
             if (users) {
               const newMap = new Map<string, string>();
               for (const u of users) {
@@ -198,8 +210,8 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
         // Build current event leaderboard — only count territories from participants (#2)
         if (currentEvt) {
           const startTime = new Date(currentEvt.startedAt).getTime();
-          // Fetch participants from separate rows (scales to 100+ users without race conditions)
           const participants = await EventModeService.getEventParticipants(currentEvt.id);
+          if (fetchId !== fetchGenRef.current) return;
           setEventParticipantCount(participants.length);
           const eventTerritories = allTerritoriesRef.current.filter(t =>
             t.claimedAt >= startTime && (participants.length === 0 || participants.includes(t.ownerId))
@@ -210,90 +222,68 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
           setEventParticipantCount(0);
         }
       } else {
-        // Regular period-based leaderboard
-        const currentPeriod = tabRef.current as TimePeriod;
-        const startDate = getStartDate(currentPeriod);
-        const since = startDate ? new Date(startDate).toISOString() : null;
-        const rpcResult = await TerritoryService.getLeaderboardRPC(since, 100);
+        // Regular period-based leaderboard — use server-side aggregation RPC
+        const startDate = getStartDate(activeTab as TimePeriod);
+        const sinceISO = startDate ? new Date(startDate).toISOString() : null;
 
-        if (rpcResult.length > 0) {
-          const entries: LeaderboardEntry[] = rpcResult.map(r => ({
+        const rpcResults = await TerritoryService.getLeaderboardRPC(sinceISO, 100);
+        if (fetchId !== fetchGenRef.current) return;
+
+        if (rpcResults.length > 0) {
+          const entries: LeaderboardEntry[] = rpcResults.map(r => ({
             userId: r.userId,
             username: r.username,
+            avatarUrl: r.avatarUrl,
             totalArea: r.totalArea,
             territoryCount: r.territoryCount,
           }));
           setLeaderboard(entries);
 
-          const newAvatarMap = new Map<string, string>();
-          for (const r of rpcResult) {
-            if (r.avatarUrl) newAvatarMap.set(r.userId, r.avatarUrl);
+          // Build avatar map from RPC results (avatarUrl is already included)
+          const newMap = new Map<string, string>();
+          for (const r of rpcResults) {
+            if (r.avatarUrl) newMap.set(r.userId, r.avatarUrl);
           }
-          setAvatarMap(newAvatarMap);
+          setAvatarMap(newMap);
         } else {
-          // Fallback: fetch raw territories and aggregate client-side
-          const territories = await TerritoryService.getLeaderboardTerritories();
-
-          const territoryData = territories.map(t => ({
-            ownerId: t.ownerId,
-            ownerName: t.ownerName,
-            area: t.area,
-            claimedAt: t.claimedAt,
-          }));
-
-          // Also cache for event tab
-          allTerritoriesRef.current = territoryData;
-
-          // Fetch avatars for unique users
-          const uniqueUserIds = [...new Set(territories.map(t => t.ownerId))];
-          if (uniqueUserIds.length > 0) {
-            try {
-              const { data: users } = await supabase
-                .from('users')
-                .select('id, avatar_url')
-                .in('id', uniqueUserIds);
-              if (users) {
-                const newMap = new Map<string, string>();
-                for (const u of users) {
-                  if (u.avatar_url) newMap.set(u.id, u.avatar_url);
-                }
-                setAvatarMap(newMap);
-              }
-            } catch {
-              // Avatar fetch is best-effort
-            }
-          }
-
-          // Filter by period and build leaderboard
-          const filteredTerritories = startDate
-            ? territoryData.filter(t => t.claimedAt >= startDate)
-            : territoryData;
-          setLeaderboard(buildLeaderboardFromTerritories(filteredTerritories));
+          setLeaderboard([]);
         }
       }
     } catch (err) {
       console.error('Failed to load leaderboard:', err);
+      // On error, clear the board so stale data from a different tab isn't shown
+      if (fetchId === fetchGenRef.current) {
+        if (activeTab === 'events') {
+          setEventLeaderboard([]);
+        } else {
+          setLeaderboard([]);
+        }
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (fetchId === fetchGenRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+        lastFetchTimeRef.current = Date.now();
+      }
     }
   }, []);
 
-  // Re-fetch data when tab changes
+  // Re-fetch when tab changes — pass the tab value directly (no ref needed)
   useEffect(() => {
-    if (!loading) {
-      fetchData();
-    }
-  }, [tab]);
+    fetchLeaderboard(tab);
+  }, [tab, fetchLeaderboard]);
 
-  // Load data on focus
+  // Also refresh on screen focus (skip if data was fetched recently to avoid double-fetch on mount)
   useFocusEffect(
     useCallback(() => {
-      fetchData();
+      const STALENESS_MS = 60_000;
+      if (Date.now() - lastFetchTimeRef.current >= STALENESS_MS) {
+        fetchLeaderboard(tab);
+      }
 
       // Set up auto-refresh every 15 minutes
       autoRefreshRef.current = setInterval(() => {
-        fetchData();
+        fetchLeaderboard(tab);
       }, AUTO_REFRESH_INTERVAL);
 
       return () => {
@@ -302,12 +292,44 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
           autoRefreshRef.current = null;
         }
       };
-    }, [fetchData])
+    }, [tab, fetchLeaderboard])
   );
 
   const onRefresh = useCallback(() => {
-    fetchData(true);
-  }, [fetchData]);
+    fetchLeaderboard(tab, true);
+  }, [tab, fetchLeaderboard]);
+
+  // Live countdown timer for active event
+  useEffect(() => {
+    if (!eventModeActive || !currentEvent) {
+      setEventCountdown(null);
+      setEventExpired(false);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const remaining = EventModeService.getEventTimeRemaining(currentEvent);
+      if (!remaining) {
+        setEventCountdown(null);
+        setEventExpired(false);
+        return;
+      }
+      if (remaining.isExpired) {
+        setEventCountdown("Time's up!");
+        setEventExpired(true);
+      } else if (remaining.hours > 0) {
+        setEventCountdown(`${remaining.hours}h ${remaining.minutes}m remaining`);
+        setEventExpired(false);
+      } else {
+        setEventCountdown(`${remaining.minutes}m ${remaining.seconds}s remaining`);
+        setEventExpired(false);
+      }
+    };
+
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 1000);
+    return () => clearInterval(timer);
+  }, [eventModeActive, currentEvent]);
 
   // Load a past event's leaderboard on demand
   const handleExpandPastEvent = useCallback(async (event: EventInfo) => {
@@ -356,22 +378,34 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
         setHasJoinedEvent(true);
         // Refresh to get updated participant list
         EventModeService.clearCache();
-        fetchData();
+        fetchLeaderboard('events');
       }
-    } catch { /* ignore */ }
+    } catch (err: any) {
+      if (err?.message === 'Event is full') {
+        Alert.alert('Event Full', 'This event has reached the maximum number of participants (100).');
+      } else if (err?.message === 'Event has ended') {
+        Alert.alert('Event Ended', 'This event\u2019s time has expired. You can no longer join.');
+      } else {
+        Alert.alert('Join Failed', 'Could not join the event. Please check your connection and try again.');
+      }
+      // Refresh to get latest state
+      EventModeService.clearCache();
+      fetchLeaderboard('events');
+    }
     finally { setJoiningEvent(false); }
-  }, [currentUserId, fetchData]);
+  }, [currentUserId, fetchLeaderboard]);
 
   const handleLeaveEvent = useCallback(async () => {
+    if (!currentUserId) return;
     setJoiningEvent(true);
     try {
       await EventModeService.leaveEvent(currentUserId);
       setHasJoinedEvent(false);
       EventModeService.clearCache();
-      fetchData();
+      fetchLeaderboard('events');
     } catch { /* ignore */ }
     finally { setJoiningEvent(false); }
-  }, [currentUserId, fetchData]);
+  }, [currentUserId, fetchLeaderboard]);
 
   const handleTabPress = (navTab: 'home' | 'record' | 'profile' | 'friends' | 'leaderboard' | 'feed') => {
     if (navTab === 'home') navigation.navigate('Home');
@@ -492,8 +526,8 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
           </View>
 
           <View style={styles.userAvatar}>
-            {avatarMap.get(entry.userId) ? (
-              <Image source={{ uri: avatarMap.get(entry.userId) }} style={styles.avatarImage} />
+            {(avatarMap.get(entry.userId) || entry.avatarUrl) ? (
+              <Image source={{ uri: avatarMap.get(entry.userId) || entry.avatarUrl }} style={styles.avatarImage} />
             ) : (
               <View style={styles.avatarPlaceholder}>
                 <User color="#E65100" size={18} />
@@ -536,19 +570,43 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
             <Text style={styles.eventDateText}>
               Started {formatEventDate(currentEvent.startedAt)}
               {eventParticipantCount > 0
-                ? ` \u00B7 ${eventParticipantCount} participant${eventParticipantCount === 1 ? '' : 's'}`
+                ? ` \u00B7 ${eventParticipantCount}/100 participants`
                 : ''}
             </Text>
+            {eventCountdown && (
+              <Text style={[styles.eventCountdownText, eventExpired && styles.eventCountdownExpired]}>
+                {eventCountdown}
+              </Text>
+            )}
+            {!eventExpired && currentEvent.durationMinutes && (() => {
+              const remaining = EventModeService.getEventTimeRemaining(currentEvent);
+              const pct = remaining ? remaining.totalSeconds / (currentEvent.durationMinutes * 60) : 0;
+              return pct > 0.9 ? (
+                <Text style={styles.eventPhaseText}>Registration open — event starts soon</Text>
+              ) : null;
+            })()}
 
             {/* Join / Leave button */}
             <TouchableOpacity
-              style={[styles.eventJoinBtn, hasJoinedEvent && styles.eventLeaveBtn]}
+              style={[
+                styles.eventJoinBtn,
+                hasJoinedEvent && styles.eventLeaveBtn,
+                (!hasJoinedEvent && (eventExpired || eventParticipantCount >= 100)) && styles.eventJoinBtnDisabled,
+              ]}
               onPress={hasJoinedEvent ? handleLeaveEvent : handleJoinEvent}
-              disabled={joiningEvent}
+              disabled={joiningEvent || (!hasJoinedEvent && (eventExpired || eventParticipantCount >= 100))}
               activeOpacity={0.7}
             >
-              <Text style={[styles.eventJoinBtnText, hasJoinedEvent && styles.eventLeaveBtnText]}>
-                {joiningEvent ? '...' : hasJoinedEvent ? 'Leave Event' : 'Join Event'}
+              <Text style={[
+                styles.eventJoinBtnText,
+                hasJoinedEvent && styles.eventLeaveBtnText,
+                (!hasJoinedEvent && (eventExpired || eventParticipantCount >= 100)) && styles.eventJoinBtnTextDisabled,
+              ]}>
+                {joiningEvent ? '...'
+                  : hasJoinedEvent ? 'Leave Event'
+                  : eventExpired ? "Event Time's Up"
+                  : eventParticipantCount >= 100 ? 'Event Full (100/100)'
+                  : `Join Event (${eventParticipantCount}/100)`}
               </Text>
             </TouchableOpacity>
             {hasJoinedEvent && (
@@ -1043,7 +1101,24 @@ const styles = StyleSheet.create({
   eventDateText: {
     fontSize: 12,
     color: '#999999',
-    marginBottom: 12,
+    marginBottom: 4,
+    marginLeft: 2,
+  },
+  eventCountdownText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#E65100',
+    marginBottom: 4,
+    marginLeft: 2,
+  },
+  eventCountdownExpired: {
+    color: '#999999',
+  },
+  eventPhaseText: {
+    fontSize: 12,
+    color: '#10B981',
+    fontWeight: '600',
+    marginBottom: 8,
     marginLeft: 2,
   },
   eventJoinBtn: {
@@ -1059,6 +1134,9 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#DDD',
   },
+  eventJoinBtnDisabled: {
+    backgroundColor: '#CCCCCC',
+  },
   eventJoinBtnText: {
     color: '#FFFFFF',
     fontSize: 15,
@@ -1066,6 +1144,9 @@ const styles = StyleSheet.create({
   },
   eventLeaveBtnText: {
     color: '#666',
+  },
+  eventJoinBtnTextDisabled: {
+    color: '#FFFFFF',
   },
   eventJoinedHint: {
     fontSize: 12,

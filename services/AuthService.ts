@@ -286,7 +286,7 @@ export const AuthService = {
             const { data, error } = await supabase
                 .from('users')
                 .select('id, username, bio, avatar_url, created_at')
-                .ilike('username', `%${query.trim()}%`)
+                .ilike('username', `%${query.trim().replace(/%/g, '\\%').replace(/_/g, '\\_')}%`)
                 .limit(20);
 
             if (error) {

@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const DEV_EMAIL = 'arav_krishnan@ug29.mesaschool.co';
 const EVENT_JOINED_KEY = 'conqr_joined_event_id';
 const MAX_PAST_EVENTS = 20;
+const MAX_EVENT_PARTICIPANTS = 100;
 
 // ── Caches ────────────────────────────────────────────────────────────────────
 let cachedEventMode: boolean | null = null;
@@ -15,6 +16,7 @@ export interface EventInfo {
     name: string;
     startedAt: string;
     endedAt?: string;
+    durationMinutes?: number;
     /** @deprecated Use getEventParticipants() — kept for backward compat with past events */
     participants?: string[];
 }
@@ -23,10 +25,15 @@ let cachedCurrentEvent: EventInfo | null | undefined = undefined;
 let eventInfoCacheTimestamp = 0;
 const EVENT_INFO_CACHE_TTL_MS = 30_000;
 
-// Participant cache — refreshed from server
-let cachedParticipants: string[] | null = null;
+// Participant cache — refreshed from server, keyed by event ID
+let cachedParticipants: { eventId: string; ids: string[] } | null = null;
 let participantsCacheTimestamp = 0;
 const PARTICIPANTS_CACHE_TTL_MS = 15_000; // 15 seconds
+
+// Past events cache
+let cachedPastEvents: EventInfo[] | null = null;
+let pastEventsCacheTimestamp = 0;
+const PAST_EVENTS_CACHE_TTL_MS = 60_000; // 60 seconds — past events change rarely
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -45,6 +52,21 @@ function participantPrefix(eventId: string): string {
 export const EventModeService = {
     isDevUser(email: string | undefined | null): boolean {
         return !!email && email.toLowerCase() === DEV_EMAIL.toLowerCase();
+    },
+
+    /** Compute time remaining for the current event. Returns null if no active event or no duration set. */
+    getEventTimeRemaining(event: EventInfo | null): { hours: number; minutes: number; seconds: number; totalSeconds: number; isExpired: boolean } | null {
+        if (!event || !event.durationMinutes) return null;
+        const endTime = new Date(event.startedAt).getTime() + event.durationMinutes * 60 * 1000;
+        const remaining = Math.max(0, endTime - Date.now());
+        const totalSeconds = Math.floor(remaining / 1000);
+        return {
+            hours: Math.floor(totalSeconds / 3600),
+            minutes: Math.floor((totalSeconds % 3600) / 60),
+            seconds: totalSeconds % 60,
+            totalSeconds,
+            isExpired: remaining <= 0,
+        };
     },
 
     // ── Event mode flag ───────────────────────────────────────────────────
@@ -128,6 +150,11 @@ export const EventModeService = {
     },
 
     async getPastEvents(): Promise<EventInfo[]> {
+        const now = Date.now();
+        if (cachedPastEvents !== null && (now - pastEventsCacheTimestamp) < PAST_EVENTS_CACHE_TTL_MS) {
+            return cachedPastEvents;
+        }
+
         try {
             const { data, error } = await supabase
                 .from('app_settings')
@@ -135,12 +162,19 @@ export const EventModeService = {
                 .eq('key', 'past_events')
                 .single();
 
-            if (error || !data?.value) return [];
+            if (error || !data?.value) {
+                cachedPastEvents = [];
+                pastEventsCacheTimestamp = now;
+                return [];
+            }
             const events = Array.isArray(data.value) ? data.value : [];
-            return events.slice(0, MAX_PAST_EVENTS);
+            const result = events.slice(0, MAX_PAST_EVENTS);
+            cachedPastEvents = result;
+            pastEventsCacheTimestamp = now;
+            return result;
         } catch (err) {
             console.error('Failed to fetch past events:', err);
-            return [];
+            return cachedPastEvents ?? [];
         }
     },
 
@@ -153,8 +187,8 @@ export const EventModeService = {
      */
     async getEventParticipants(eventId: string): Promise<string[]> {
         const now = Date.now();
-        if (cachedParticipants !== null && (now - participantsCacheTimestamp) < PARTICIPANTS_CACHE_TTL_MS) {
-            return cachedParticipants;
+        if (cachedParticipants !== null && cachedParticipants.eventId === eventId && (now - participantsCacheTimestamp) < PARTICIPANTS_CACHE_TTL_MS) {
+            return cachedParticipants.ids;
         }
 
         try {
@@ -165,16 +199,16 @@ export const EventModeService = {
                 .like('key', `${prefix}%`);
 
             if (error || !data) {
-                return cachedParticipants ?? [];
+                return cachedParticipants?.ids ?? [];
             }
 
             const ids = data.map(row => row.key.slice(prefix.length));
-            cachedParticipants = ids;
+            cachedParticipants = { eventId, ids };
             participantsCacheTimestamp = now;
             return ids;
         } catch (err) {
             console.error('Failed to fetch event participants:', err);
-            return cachedParticipants ?? [];
+            return cachedParticipants?.ids ?? [];
         }
     },
 
@@ -185,6 +219,22 @@ export const EventModeService = {
         try {
             const currentEvent = await this.getCurrentEvent();
             if (!currentEvent) return false;
+
+            // Check if event time has expired
+            const timeRemaining = this.getEventTimeRemaining(currentEvent);
+            if (timeRemaining?.isExpired) {
+                throw new Error('Event has ended');
+            }
+
+            // Force fresh participant count to avoid race conditions at capacity
+            cachedParticipants = null;
+            participantsCacheTimestamp = 0;
+
+            // Enforce participant cap
+            const participants = await this.getEventParticipants(currentEvent.id);
+            if (participants.length >= MAX_EVENT_PARTICIPANTS && !participants.includes(userId)) {
+                throw new Error('Event is full');
+            }
 
             // Store locally for fast check during territory claiming
             await AsyncStorage.setItem(EVENT_JOINED_KEY, currentEvent.id);
@@ -199,7 +249,11 @@ export const EventModeService = {
             participantsCacheTimestamp = 0;
 
             return true;
-        } catch (err) {
+        } catch (err: any) {
+            // Re-throw known errors so UI can show specific messages
+            if (err?.message === 'Event is full' || err?.message === 'Event has ended') {
+                throw err;
+            }
             console.error('Failed to join event:', err);
             return false;
         }
@@ -223,7 +277,9 @@ export const EventModeService = {
                 cachedParticipants = null;
                 participantsCacheTimestamp = 0;
             }
-        } catch { /* ignore */ }
+        } catch (err) {
+            console.error('[EventMode] Failed to leave event:', err);
+        }
     },
 
     async hasJoinedCurrentEvent(): Promise<boolean> {
@@ -248,15 +304,16 @@ export const EventModeService = {
 
     // ── Event lifecycle ───────────────────────────────────────────────────
 
-    async startEvent(name: string): Promise<{ success: boolean; error?: string }> {
+    async startEvent(name: string, durationMinutes: number = 120): Promise<{ success: boolean; error?: string }> {
         const toggleResult = await this.setEventMode(true);
         if (!toggleResult.success) return toggleResult;
 
         try {
             const eventInfo: EventInfo = {
-                id: Date.now().toString(),
+                id: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
                 name: name.trim(),
                 startedAt: new Date().toISOString(),
+                durationMinutes,
             };
 
             await supabase
@@ -265,10 +322,11 @@ export const EventModeService = {
 
             cachedCurrentEvent = eventInfo;
             eventInfoCacheTimestamp = Date.now();
-            cachedParticipants = [];
+            cachedParticipants = { eventId: eventInfo.id, ids: [] };
             participantsCacheTimestamp = Date.now();
-        } catch (err) {
+        } catch (err: any) {
             console.error('Failed to save event info:', err);
+            return { success: false, error: err?.message || 'Failed to save event info' };
         }
 
         return { success: true };
@@ -317,8 +375,9 @@ export const EventModeService = {
             eventInfoCacheTimestamp = Date.now();
             cachedParticipants = null;
             participantsCacheTimestamp = 0;
-        } catch (err) {
+        } catch (err: any) {
             console.error('Failed to archive event:', err);
+            return { success: false, error: err?.message || 'Failed to archive event' };
         }
 
         return { success: true };
@@ -363,5 +422,7 @@ export const EventModeService = {
         eventInfoCacheTimestamp = 0;
         cachedParticipants = null;
         participantsCacheTimestamp = 0;
+        cachedPastEvents = null;
+        pastEventsCacheTimestamp = 0;
     },
 };

@@ -19,6 +19,7 @@ import { useScreenTracking } from '../lib/useScreenTracking';
 import { showToast } from '../components/Toast';
 
 const ONBOARDING_KEY = 'conqr_onboarding_shown_v1';
+const LOCATION_DISCLOSURE_KEY = 'conqr_location_disclosure_v1';
 
 interface HomeScreenProps {
   navigation: any;
@@ -37,13 +38,24 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
   const [currentUserId, setCurrentUserId] = React.useState<string | undefined>(undefined);
   const [eventModeActive, setEventModeActive] = React.useState(false);
   const [eventName, setEventName] = React.useState<string | null>(null);
+  const [eventCountdown, setEventCountdown] = React.useState<string | null>(null);
+  const [eventExpired, setEventExpired] = React.useState(false);
+  const currentEventRef = React.useRef<import('../services/EventModeService').EventInfo | null>(null);
   const [recentEventEnded, setRecentEventEnded] = React.useState<string | null>(null);
   const [locationError, setLocationError] = React.useState<string | null>(null);
   const mapRef = React.useRef<MapContainerHandle>(null);
+  const lastFetchTimeRef = React.useRef(0);
+  const usernameCacheRef = React.useRef<Record<string, string>>({});
+  const pendingRealtimeTerritories = React.useRef<Territory[]>([]);
+  const realtimeBatchTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Onboarding state
   const [showOnboarding, setShowOnboarding] = React.useState(false);
   const [onboardingStep, setOnboardingStep] = React.useState(0);
+
+  // Location disclosure state (Google Play requirement)
+  const [showLocationDisclosure, setShowLocationDisclosure] = React.useState(false);
+  const [locationDisclosureAccepted, setLocationDisclosureAccepted] = React.useState(false);
 
   // Invasion modal state
   const [invasionModal, setInvasionModal] = React.useState<{
@@ -70,16 +82,37 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
     return `${Math.round(sqMeters)} m²`;
   };
 
-  // Check onboarding on mount
+  // Check onboarding and location disclosure on mount
   React.useEffect(() => {
-    AsyncStorage.getItem(ONBOARDING_KEY).then(val => {
-      if (val !== 'true') setShowOnboarding(true);
-    }).catch(() => {});
+    Promise.all([
+      AsyncStorage.getItem(ONBOARDING_KEY).catch(() => null),
+      AsyncStorage.getItem(LOCATION_DISCLOSURE_KEY).catch(() => null),
+    ]).then(([onboardingVal, disclosureVal]) => {
+      if (disclosureVal === 'true') {
+        setLocationDisclosureAccepted(true);
+      }
+      if (onboardingVal !== 'true') {
+        setShowOnboarding(true);
+      } else if (disclosureVal !== 'true') {
+        // Returning user who saw onboarding but not the disclosure yet
+        setShowLocationDisclosure(true);
+      }
+    });
   }, []);
 
   const dismissOnboarding = () => {
     setShowOnboarding(false);
     AsyncStorage.setItem(ONBOARDING_KEY, 'true').catch(() => {});
+    // Show location disclosure after onboarding if not yet accepted
+    if (!locationDisclosureAccepted) {
+      setShowLocationDisclosure(true);
+    }
+  };
+
+  const acceptLocationDisclosure = () => {
+    setShowLocationDisclosure(false);
+    setLocationDisclosureAccepted(true);
+    AsyncStorage.setItem(LOCATION_DISCLOSURE_KEY, 'true').catch(() => {});
   };
 
   const advanceOnboarding = () => {
@@ -158,14 +191,29 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
     }
   };
 
-  // Reload territories every time the screen comes into focus (including mount)
+  // Reload territories on focus, with staleness guard to avoid redundant fetches
   // Also sync any pending activities in background to ensure data reaches the cloud
   useFocusEffect(
     React.useCallback(() => {
-      // Sync pending activities in background so other users can see them
+      // Sync pending activities in background (low cost, always run)
       ActivityService.syncPendingActivities().catch(err => {
         console.error('Failed to sync pending activities:', err);
       });
+
+      const STALENESS_MS = 60_000;
+      if (Date.now() - lastFetchTimeRef.current < STALENESS_MS && territories.length > 0) {
+        // Data is fresh enough, skip expensive territory fetch but still check invasions
+        (async () => {
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user) {
+              const invasions = await TerritoryService.getUnseenInvasions(session.user.id);
+              if (invasions.length > 0) showInvasionAlert(invasions);
+            }
+          } catch { /* ignore */ }
+        })();
+        return;
+      }
 
       const loadTerritories = async () => {
         try {
@@ -175,6 +223,7 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
             // Fetch all territories to show everyone's claimed areas
             const allTerritories = await TerritoryService.getAllTerritories();
             setTerritories(allTerritories);
+            lastFetchTimeRef.current = Date.now();
 
             // Check event mode status and get event details
             const [eventMode, currentEvt, pastEvts] = await Promise.all([
@@ -184,6 +233,7 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
             ]);
             setEventModeActive(eventMode);
             setEventName(currentEvt?.name || null);
+            currentEventRef.current = currentEvt;
 
             // Check if an event ended recently (within 24 hours) (#8)
             if (!eventMode && pastEvts.length > 0) {
@@ -212,10 +262,44 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
         }
       };
       loadTerritories();
-    }, [])
+    }, [territories.length])
   );
 
+  // Live countdown timer for active event
   React.useEffect(() => {
+    if (!eventModeActive || !currentEventRef.current) {
+      setEventCountdown(null);
+      setEventExpired(false);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const remaining = EventModeService.getEventTimeRemaining(currentEventRef.current);
+      if (!remaining) {
+        setEventCountdown(null);
+        setEventExpired(false);
+        return;
+      }
+      if (remaining.isExpired) {
+        setEventCountdown("Time's up!");
+        setEventExpired(true);
+      } else if (remaining.hours > 0) {
+        setEventCountdown(`${remaining.hours}h ${remaining.minutes}m remaining`);
+        setEventExpired(false);
+      } else {
+        setEventCountdown(`${remaining.minutes}m ${remaining.seconds}s remaining`);
+        setEventExpired(false);
+      }
+    };
+
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 1000);
+    return () => clearInterval(timer);
+  }, [eventModeActive]);
+
+  React.useEffect(() => {
+    if (!locationDisclosureAccepted) return;
+
     let unsubscribe: (() => void) | undefined;
     let mounted = true;
 
@@ -243,6 +327,45 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
       mounted = false;
       if (unsubscribe) unsubscribe();
     };
+  }, [locationDisclosureAccepted]);
+
+  // Batch-resolve usernames for Realtime territory inserts
+  const flushRealtimeTerritories = React.useCallback(async () => {
+    const pending = pendingRealtimeTerritories.current.splice(0);
+    if (pending.length === 0) return;
+
+    // Find owner IDs not yet in cache
+    const unknownIds = [...new Set(
+      pending.filter(t => !usernameCacheRef.current[t.ownerId]).map(t => t.ownerId)
+    )];
+
+    if (unknownIds.length > 0) {
+      try {
+        const { data } = await supabase
+          .from('users')
+          .select('id, username')
+          .in('id', unknownIds);
+        if (data) {
+          for (const u of data) {
+            usernameCacheRef.current[u.id] = u.username || 'User ' + u.id.substring(0, 6);
+          }
+        }
+      } catch {
+        // Fallback names for unknown IDs
+      }
+    }
+
+    // Assign cached names to pending territories
+    for (const t of pending) {
+      t.ownerName = usernameCacheRef.current[t.ownerId] || 'User ' + t.ownerId.substring(0, 6);
+    }
+
+    // Merge into state
+    setTerritories(prev => {
+      const existingIds = new Set(prev.map(t => t.id));
+      const newOnes = pending.filter(t => !existingIds.has(t.id));
+      return newOnes.length > 0 ? [...newOnes, ...prev] : prev;
+    });
   }, []);
 
   // Realtime subscription for live territory updates from other users
@@ -253,6 +376,7 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'territories' },
         (payload: any) => {
+          try {
           const row = payload.new;
           if (!row || !row.id) return;
           // Don't process our own inserts — we already have them locally
@@ -275,23 +399,23 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
             history: [],
           };
 
-          // Resolve owner name then merge into state
-          (async () => {
-            try {
-              const { data } = await supabase
-                .from('users')
-                .select('username')
-                .eq('id', row.owner_id)
-                .single();
-              if (data?.username) newTerritory.ownerName = data.username;
-            } catch {
-              newTerritory.ownerName = 'User ' + row.owner_id.substring(0, 6);
-            }
+          // Check username cache first
+          const cached = usernameCacheRef.current[row.owner_id];
+          if (cached) {
+            newTerritory.ownerName = cached;
             setTerritories(prev => {
               if (prev.some(t => t.id === newTerritory.id)) return prev;
               return [newTerritory, ...prev];
             });
-          })();
+          } else {
+            // Queue for batched resolution
+            pendingRealtimeTerritories.current.push(newTerritory);
+            if (realtimeBatchTimer.current) clearTimeout(realtimeBatchTimer.current);
+            realtimeBatchTimer.current = setTimeout(flushRealtimeTerritories, 500);
+          }
+          } catch (err) {
+            console.error('[Realtime] Failed to process territory insert:', err);
+          }
         }
       )
       .on(
@@ -307,8 +431,9 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
 
     return () => {
       supabase.removeChannel(channel);
+      if (realtimeBatchTimer.current) clearTimeout(realtimeBatchTimer.current);
     };
-  }, [currentUserId]);
+  }, [currentUserId, flushRealtimeTerritories]);
 
   // Center map on territory when navigated with focus params
   const focusLat = route?.params?.focusTerritoryLat;
@@ -368,15 +493,16 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         {eventModeActive && (
           <TouchableOpacity
-            style={styles.eventModeBanner}
+            style={[styles.eventModeBanner, eventExpired && styles.eventModeBannerExpired]}
             onPress={() => navigation.navigate('Leaderboard')}
             activeOpacity={0.8}
           >
             <Zap color="#FFFFFF" size={14} />
-            <Text style={styles.eventModeBannerText}>
-              {eventName ? `Event: ${eventName}` : 'Event Active'}
+            <Text style={styles.eventModeBannerText} numberOfLines={1}>
+              {eventName ? `${eventName}` : 'Event Active'}
+              {eventCountdown ? ` · ${eventCountdown}` : ''}
             </Text>
-            <Text style={styles.eventModeBannerHint}>Tap to join</Text>
+            <Text style={styles.eventModeBannerHint}>View</Text>
           </TouchableOpacity>
         )}
         {!eventModeActive && recentEventEnded && (
@@ -458,6 +584,35 @@ export default function HomeScreen({ navigation, route }: HomeScreenProps) {
                 <Text style={styles.onboardingSkipText}>Skip</Text>
               </TouchableOpacity>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Location disclosure (Google Play requirement) */}
+      <Modal
+        visible={showLocationDisclosure}
+        transparent
+        animationType="fade"
+        onRequestClose={acceptLocationDisclosure}
+      >
+        <View style={styles.onboardingBackdrop}>
+          <View style={styles.onboardingCard}>
+            <View style={styles.onboardingIconCircle}>
+              <MapPin color="#E65100" size={32} />
+            </View>
+            <Text style={styles.onboardingTitle}>Location Access</Text>
+            <Text style={styles.locationDisclosureBody}>
+              Conqr collects your GPS location to track your walking, running, and cycling routes in real time — including when the app is in the background or the screen is off during an active activity.
+            </Text>
+            <Text style={styles.locationDisclosureBody}>
+              Your location data is used to record activity paths and claim territories on the map. Location is only tracked while you are recording an activity.
+            </Text>
+            <Text style={styles.locationDisclosureBody}>
+              You can revoke location access at any time in your device settings.
+            </Text>
+            <TouchableOpacity style={styles.onboardingBtn} onPress={acceptLocationDisclosure}>
+              <Text style={styles.onboardingBtnText}>Continue</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -656,6 +811,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 8,
   },
+  eventModeBannerExpired: {
+    backgroundColor: '#999999',
+  },
   eventModeBannerText: {
     color: '#FFFFFF',
     fontSize: 13,
@@ -773,6 +931,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 24,
+  },
+  locationDisclosureBody: {
+    fontSize: 14,
+    color: '#666666',
+    textAlign: 'center',
+    lineHeight: 21,
+    marginBottom: 12,
   },
   onboardingDots: {
     flexDirection: 'row',

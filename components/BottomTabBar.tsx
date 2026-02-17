@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import { Home, User, UserPlus, Trophy, Newspaper } from 'lucide-react-native';
+import { Home, User, Trophy, Newspaper } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
@@ -67,7 +67,6 @@ export default function BottomTabBar({ activeTab, onTabPress }: BottomTabBarProp
       </TouchableOpacity>
 
       {renderTab('leaderboard', Trophy)}
-      {renderTab('friends', UserPlus)}
       {renderTab('profile', User)}
     </View>
   );

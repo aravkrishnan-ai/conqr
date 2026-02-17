@@ -28,28 +28,67 @@ try {
     // Gracefully handle missing auth in test environments
 }
 
-async function sendEvent(
+// ── Batched event queue ─────────────────────────────────────────────────────
+
+interface QueuedEvent {
+    id: string;
+    user_id: string;
+    event_type: AnalyticsEventType;
+    screen_name: string | null;
+    session_id: string;
+    metadata: Record<string, any>;
+    created_at: string;
+}
+
+let eventQueue: QueuedEvent[] = [];
+let flushTimer: ReturnType<typeof setInterval> | null = null;
+const FLUSH_INTERVAL_MS = 10_000; // Flush every 10 seconds
+const FLUSH_THRESHOLD = 10; // Or when 10 events are queued
+
+function enqueueEvent(
     eventType: AnalyticsEventType,
     userId: string,
     metadata: Record<string, any> = {},
     screenName?: string,
-): Promise<void> {
-    const { error } = await supabase
-        .from('analytics_events')
-        .insert({
-            id: uuidv4(),
-            user_id: userId,
-            event_type: eventType,
-            screen_name: screenName || null,
-            session_id: sessionId,
-            metadata: { ...metadata, platform: Platform.OS },
-            created_at: new Date().toISOString(),
-        });
+): void {
+    eventQueue.push({
+        id: uuidv4(),
+        user_id: userId,
+        event_type: eventType,
+        screen_name: screenName || null,
+        session_id: sessionId,
+        metadata: { ...metadata, platform: Platform.OS },
+        created_at: new Date().toISOString(),
+    });
 
-    if (error) {
-        console.error('[Analytics] Insert failed:', error.code, error.message, error.hint);
+    if (eventQueue.length >= FLUSH_THRESHOLD) {
+        flushQueue();
     }
 }
+
+async function flushQueue(): Promise<void> {
+    if (eventQueue.length === 0) return;
+    const batch = eventQueue.splice(0); // Take all and clear
+    try {
+        const { error } = await supabase
+            .from('analytics_events')
+            .insert(batch);
+        if (error) {
+            console.error('[Analytics] Batch insert failed:', error.code, error.message);
+            // Re-queue failed events (drop if queue is already large to prevent memory leak)
+            if (eventQueue.length < 100) {
+                eventQueue.unshift(...batch);
+            }
+        }
+    } catch (err) {
+        console.error('[Analytics] Batch flush error:', err);
+        if (eventQueue.length < 100) {
+            eventQueue.unshift(...batch);
+        }
+    }
+}
+
+// ── Public service ──────────────────────────────────────────────────────────
 
 export const AnalyticsService = {
     async trackEvent(
@@ -60,23 +99,22 @@ export const AnalyticsService = {
         try {
             const userId = await getUserId();
             if (!userId) return;
-            // Fire and forget — don't block the caller
-            sendEvent(eventType, userId, metadata, screenName);
+            enqueueEvent(eventType, userId, metadata, screenName);
         } catch {
             // Analytics must never crash the app
         }
     },
 
     async trackScreenView(screenName: string): Promise<void> {
-        this.trackEvent('screen_view', {}, screenName);
+        await this.trackEvent('screen_view', {}, screenName);
     },
 
     async trackError(message: string, stack?: string, component?: string): Promise<void> {
-        this.trackEvent('error', { message, stack, component });
+        await this.trackEvent('error', { message, stack, component });
     },
 
     async trackCrash(error: Error, componentStack?: string): Promise<void> {
-        this.trackEvent('crash', {
+        await this.trackEvent('crash', {
             message: error.message,
             stack: error.stack,
             component: componentStack,
@@ -86,9 +124,13 @@ export const AnalyticsService = {
     async startSession(): Promise<void> {
         sessionId = uuidv4();
 
-        // Clean up previous listeners
+        // Clean up previous listeners and timers
         if (appStateSubscription) appStateSubscription.remove();
         if (authSubscription) authSubscription.unsubscribe();
+        if (flushTimer) clearInterval(flushTimer);
+
+        // Start periodic flush
+        flushTimer = setInterval(() => flushQueue(), FLUSH_INTERVAL_MS);
 
         // Track foreground/background transitions
         appStateSubscription = AppState.addEventListener('change', (state: AppStateStatus) => {
@@ -97,6 +139,8 @@ export const AnalyticsService = {
                 this.trackEvent('session_start');
             } else if (state === 'background' || state === 'inactive') {
                 this.trackEvent('session_end');
+                // Flush on background to avoid losing events
+                flushQueue();
             }
         });
 
@@ -118,6 +162,12 @@ export const AnalyticsService = {
 
     async endSession(): Promise<void> {
         this.trackEvent('session_end');
+        // Flush remaining events before ending
+        await flushQueue();
+        if (flushTimer) {
+            clearInterval(flushTimer);
+            flushTimer = null;
+        }
         if (appStateSubscription) {
             appStateSubscription.remove();
             appStateSubscription = null;
@@ -129,6 +179,6 @@ export const AnalyticsService = {
     },
 
     async flush(): Promise<void> {
-        // No-op, events are sent immediately now
+        await flushQueue();
     },
 };

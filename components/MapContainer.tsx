@@ -405,7 +405,7 @@ function MapContainerComponent(
     // Set current user ID
     React.useEffect(() => {
         if (!isReady || !currentUserId) return;
-        injectScript(`window.setCurrentUser && window.setCurrentUser('${currentUserId}')`);
+        injectScript(`window.setCurrentUser && window.setCurrentUser(${JSON.stringify(currentUserId)})`);
     }, [currentUserId, isReady, injectScript]);
 
     // Update territories

@@ -148,7 +148,7 @@ export default function SearchScreen({ navigation }: SearchScreenProps) {
           )}
         </View>
       </SafeAreaView>
-      <BottomTabBar activeTab="friends" onTabPress={handleTabPress} />
+      <BottomTabBar activeTab="profile" onTabPress={handleTabPress} />
     </View>
   );
 }

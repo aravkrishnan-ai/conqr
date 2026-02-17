@@ -73,15 +73,29 @@ export const ActivityService = {
     },
 
     /**
-     * Calculate average speed from path (m/s)
+     * Calculate average speed from path (m/s).
+     * Uses distance/duration for accuracy — GPS speed values include
+     * near-zero readings when stationary which skew the average down.
      */
     calculateAverageSpeed(path: GPSPoint[]): number {
         if (!Array.isArray(path) || path.length < 2) return 0;
 
+        // Primary method: distance / duration (most reliable)
+        const distance = this.calculateDistance(path);
+        const firstTimestamp = path[0]?.timestamp;
+        const lastTimestamp = path[path.length - 1]?.timestamp;
+        if (firstTimestamp && lastTimestamp && lastTimestamp > firstTimestamp) {
+            const durationSeconds = (lastTimestamp - firstTimestamp) / 1000;
+            if (durationSeconds > 0 && distance > 0) {
+                return distance / durationSeconds;
+            }
+        }
+
+        // Fallback: average GPS speed values (excluding near-zero stationary readings)
         const validSpeeds = path
             .filter(p => p && typeof p.speed === 'number')
             .map(p => p.speed as number)
-            .filter(s => s >= 0 && s < 100); // Filter out unrealistic speeds (> 100 m/s = 360 km/h)
+            .filter(s => s >= 0.3 && s < 100); // Exclude < 0.3 m/s (stationary noise)
 
         if (validSpeeds.length === 0) return 0;
         return validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length;
@@ -500,7 +514,8 @@ export const ActivityService = {
                     await supabase
                         .from('activities')
                         .delete()
-                        .eq('id', activityId);
+                        .eq('id', activityId)
+                        .eq('user_id', session.user.id);
                 }
             } catch (cloudErr) {
                 console.error('Failed to delete activity from cloud:', cloudErr);

@@ -29,7 +29,7 @@
         "backgroundColor": "#F5F0E8"
       },
       "package": "com.aravkrishnan.conqr",
-      "versionCode": 2,
+      "versionCode": 3,
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",

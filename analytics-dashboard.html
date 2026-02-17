@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; connect-src https://*.supabase.co">
 <title>Conqr Analytics Dashboard</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -132,8 +133,8 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 <script>
 let sb = null;
 let dauChart = null;
@@ -172,15 +173,15 @@ async function connectAndLoad() {
       const body = await rawRes.text();
       let parsed = {};
       try { parsed = JSON.parse(body); } catch(e) {}
-      errEl.innerHTML = '<b>API Error (HTTP ' + rawRes.status + '):</b><br>' +
-        (parsed.message || body || 'Unknown error') +
-        (parsed.hint ? '<br><i>Hint: ' + parsed.hint + '</i>' : '') +
+      errEl.innerHTML = '<b>API Error (HTTP ' + esc('' + rawRes.status) + '):</b><br>' +
+        esc(parsed.message || body || 'Unknown error') +
+        (parsed.hint ? '<br><i>Hint: ' + esc(parsed.hint) + '</i>' : '') +
         '<br><br><b>Check:</b> Make sure you are pasting the <code>service_role</code> key (starts with <code>eyJ...</code>), not the anon key.';
       errEl.style.display = 'block';
       return;
     }
   } catch (fetchErr) {
-    errEl.innerHTML = '<b>Network error:</b> Could not reach Supabase at<br><code>' + url + '</code><br><br>' + fetchErr.message;
+    errEl.innerHTML = '<b>Network error:</b> Could not reach Supabase at<br><code>' + esc(url) + '</code><br><br>' + esc(fetchErr.message);
     errEl.style.display = 'block';
     return;
   }
@@ -197,9 +198,9 @@ async function connectAndLoad() {
 
     const { count, error } = await sb.from('analytics_events').select('*', { count: 'exact', head: true });
     if (error) {
-      errEl.innerHTML = '<b>Query error:</b> ' + error.message +
-        (error.hint ? '<br><i>Hint: ' + error.hint + '</i>' : '') +
-        (error.code ? '<br>Code: ' + error.code : '');
+      errEl.innerHTML = '<b>Query error:</b> ' + esc(error.message) +
+        (error.hint ? '<br><i>Hint: ' + esc(error.hint) + '</i>' : '') +
+        (error.code ? '<br>Code: ' + esc(error.code) : '');
       errEl.style.display = 'block';
       return;
     }
@@ -208,8 +209,8 @@ async function connectAndLoad() {
     document.getElementById('dashboard').style.display = 'block';
     await refreshAll();
   } catch (err) {
-    errEl.innerHTML = '<b>Connection failed:</b> ' + (err.message || 'Unknown error') +
-      '<br><pre style="margin-top:8px;font-size:11px;color:#888;white-space:pre-wrap">' + (err.stack || '') + '</pre>';
+    errEl.innerHTML = '<b>Connection failed:</b> ' + esc(err.message || 'Unknown error') +
+      '<br><pre style="margin-top:8px;font-size:11px;color:#888;white-space:pre-wrap">' + esc(err.stack || '') + '</pre>';
     errEl.style.display = 'block';
   }
 }
@@ -414,7 +415,7 @@ async function loadErrors() {
   data.forEach(row => {
     const meta = row.metadata || {};
     const tag = row.event_type === 'crash' ? 'tag-crash' : 'tag-error';
-    html += `<tr><td><span class="tag ${tag}">${row.event_type}</span></td><td title="${esc(meta.stack || '')}">${esc((meta.message || 'Unknown').substring(0, 80))}</td><td>${row.screen_name || '-'}</td><td>${timeAgo(row.created_at)}</td></tr>`;
+    html += `<tr><td><span class="tag ${tag}">${row.event_type}</span></td><td title="${esc(meta.stack || '')}">${esc((meta.message || 'Unknown').substring(0, 80))}</td><td>${esc(row.screen_name || '-')}</td><td>${timeAgo(row.created_at)}</td></tr>`;
   });
   html += '</table></div>';
   document.getElementById('error-table').innerHTML = html;
