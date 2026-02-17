@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, ScrollView, RefreshControl, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { ArrowLeft, User, Activity, MapPin, Clock, Calendar, Crown, Medal } from 'lucide-react-native';
+import { ArrowLeft, User, Activity, MapPin, Clock, Calendar, Crown, Medal, MoreVertical } from 'lucide-react-native';
 import { AuthService } from '../services/AuthService';
+import { ReportBlockService } from '../services/ReportBlockService';
+import { showToast } from '../components/Toast';
 import { ActivityService } from '../services/ActivityService';
 import { TerritoryService } from '../services/TerritoryService';
 import { UserProfile, Activity as ActivityType, Territory } from '../lib/types';
@@ -162,7 +164,50 @@ export default function UserProfileScreen({ navigation, route }: UserProfileScre
             <ArrowLeft color="#1A1A1A" size={24} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Profile</Text>
-          <View style={styles.headerSpacer} />
+          <TouchableOpacity
+            style={styles.headerSpacer}
+            onPress={() => {
+              if (!userId || !profile) return;
+              Alert.alert(profile.username, undefined, [
+                {
+                  text: 'Report User', onPress: async () => {
+                    try {
+                      await ReportBlockService.reportContent(userId, 'user', 'inappropriate');
+                      showToast('Report submitted. Thank you.', 'success');
+                    } catch {
+                      showToast('Failed to submit report', 'error');
+                    }
+                  }
+                },
+                {
+                  text: 'Block User', style: 'destructive', onPress: () => {
+                    Alert.alert(
+                      'Block User',
+                      `Are you sure you want to block ${profile.username}?`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Block', style: 'destructive', onPress: async () => {
+                            try {
+                              await ReportBlockService.blockUser(userId);
+                              showToast(`${profile.username} has been blocked`, 'success');
+                              navigation.goBack();
+                            } catch {
+                              showToast('Failed to block user', 'error');
+                            }
+                          }
+                        },
+                      ]
+                    );
+                  }
+                },
+                { text: 'Cancel', style: 'cancel' },
+              ]);
+            }}
+            activeOpacity={0.7}
+          >
+            <MoreVertical color="#1A1A1A" size={20} />
+          </TouchableOpacity>
         </View>
 
         <ScrollView
@@ -321,6 +366,9 @@ const styles = StyleSheet.create({
   },
   headerSpacer: {
     width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   content: {
     flex: 1,

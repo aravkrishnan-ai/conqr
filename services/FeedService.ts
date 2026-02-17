@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { Post, PostComment, PostType, Activity, Territory, GPSPoint } from '../lib/types';
+import { ReportBlockService } from './ReportBlockService';
 
 const parsePolylines = (polylines: any): GPSPoint[][] => {
     if (!polylines) return [];
@@ -176,9 +177,15 @@ export const FeedService = {
                 }
             }
 
-            return posts.map((row: any) =>
-                mapPost(row, currentUserId, likes, commentCounts, linkedData.activitiesMap, linkedData.territoriesMap)
-            );
+            // Filter out posts from blocked users
+            const blockedIds = await ReportBlockService.getBlockedUserIds();
+            const blockedSet = new Set(blockedIds);
+
+            return posts
+                .filter((row: any) => !blockedSet.has(row.user_id))
+                .map((row: any) =>
+                    mapPost(row, currentUserId, likes, commentCounts, linkedData.activitiesMap, linkedData.territoriesMap)
+                );
         } catch (err) {
             console.error('Failed to fetch feed:', err);
             return [];
@@ -290,7 +297,13 @@ export const FeedService = {
                 return [];
             }
 
-            return data.map(mapComment);
+            // Filter out comments from blocked users
+            const blockedIds = await ReportBlockService.getBlockedUserIds();
+            const blockedSet = new Set(blockedIds);
+
+            return data
+                .filter((row: any) => !blockedSet.has(row.user_id))
+                .map(mapComment);
         } catch (err) {
             console.error('Failed to fetch comments:', err);
             return [];

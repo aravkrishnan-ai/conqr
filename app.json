@@ -21,7 +21,9 @@
         "NSLocationWhenInUseUsageDescription": "Conqr needs your location to track your movements and claim territories.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Conqr needs your location to track your movements and claim territories even when the app is in the background.",
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": ["location"]
+        "UIBackgroundModes": [
+          "location"
+        ]
       }
     },
     "android": {
@@ -30,7 +32,7 @@
         "backgroundColor": "#F5F0E8"
       },
       "package": "com.aravkrishnan.conqr",
-      "versionCode": 3,
+      "versionCode": 4,
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",

@@ -10,7 +10,7 @@ import { StatusBar } from 'expo-status-bar';
 import {
   Newspaper, Plus, User, Heart, MessageCircle, Share2,
   X, Send, MapPin, Clock, Map, Trash2, Activity,
-  Footprints, Bike, PersonStanding
+  Footprints, Bike, PersonStanding, MoreHorizontal, Flag
 } from 'lucide-react-native';
 import Svg, { Polyline as SvgPolyline, Circle, Polygon as SvgPolygon, Line, Rect, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { useFocusEffect } from '@react-navigation/native';
@@ -19,6 +19,8 @@ import SharePreviewModal from '../components/SharePreviewModal';
 import { FeedService } from '../services/FeedService';
 import { ActivityService } from '../services/ActivityService';
 import { TerritoryService } from '../services/TerritoryService';
+import { ReportBlockService } from '../services/ReportBlockService';
+import { showToast } from '../components/Toast';
 import { supabase } from '../lib/supabase';
 import { Post, PostComment, PostType, Activity as ActivityType, Territory, GPSPoint } from '../lib/types';
 import { useScreenTracking } from '../lib/useScreenTracking';
@@ -67,6 +69,15 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
   // Share modal state
   const [showShareModal, setShowShareModal] = useState(false);
   const [sharePost, setSharePost] = useState<Post | null>(null);
+
+  // Report/block state
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+  const [reportTarget, setReportTarget] = useState<{
+    type: 'post' | 'comment' | 'user';
+    targetId?: string;
+    userId: string;
+    username: string;
+  } | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -228,6 +239,71 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
   const handleSharePost = (post: Post) => {
     setSharePost(post);
     setShowShareModal(true);
+  };
+
+  const handleBlockUser = (userId: string, username: string) => {
+    Alert.alert(
+      'Block User',
+      `Are you sure you want to block ${username}? You will no longer see their posts or comments.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block', style: 'destructive', onPress: async () => {
+            try {
+              await ReportBlockService.blockUser(userId);
+              setPosts(prev => prev.filter(p => p.userId !== userId));
+              setComments(prev => prev.filter(c => c.userId !== userId));
+              showToast(`${username} has been blocked`, 'success');
+            } catch (err) {
+              showToast('Failed to block user', 'error');
+            }
+          }
+        },
+      ]
+    );
+  };
+
+  const handlePostMenu = (post: Post) => {
+    Alert.alert(post.username, undefined, [
+      {
+        text: 'Report Post', onPress: () => {
+          setReportTarget({ type: 'post', targetId: post.id, userId: post.userId, username: post.username });
+          setReportModalVisible(true);
+        }
+      },
+      { text: 'Block User', style: 'destructive', onPress: () => handleBlockUser(post.userId, post.username) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const handleCommentMenu = (comment: PostComment) => {
+    Alert.alert(comment.username, undefined, [
+      {
+        text: 'Report Comment', onPress: () => {
+          setReportTarget({ type: 'comment', targetId: comment.id, userId: comment.userId, username: comment.username });
+          setReportModalVisible(true);
+        }
+      },
+      { text: 'Block User', style: 'destructive', onPress: () => handleBlockUser(comment.userId, comment.username) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const handleSubmitReport = async (reason: 'spam' | 'harassment' | 'inappropriate' | 'other') => {
+    if (!reportTarget) return;
+    try {
+      await ReportBlockService.reportContent(
+        reportTarget.userId,
+        reportTarget.type,
+        reason,
+        reportTarget.targetId,
+      );
+      setReportModalVisible(false);
+      setReportTarget(null);
+      showToast('Report submitted. Thank you.', 'success');
+    } catch (err) {
+      showToast('Failed to submit report', 'error');
+    }
   };
 
   const formatTimeAgo = (timestamp: number): string => {
@@ -538,9 +614,13 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
               </Text>
             </View>
           </TouchableOpacity>
-          {isOwner && (
+          {isOwner ? (
             <TouchableOpacity onPress={() => handleDeletePost(item.id)} style={styles.deleteBtn}>
               <Trash2 color="#999999" size={16} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity onPress={() => handlePostMenu(item)} style={styles.deleteBtn}>
+              <MoreHorizontal color="#999999" size={18} />
             </TouchableOpacity>
           )}
         </View>
@@ -649,22 +729,36 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
               <ActivityIndicator size="small" color="#E65100" style={styles.commentsLoader} />
             ) : (
               <>
-                {comments.map((comment) => (
-                  <View key={comment.id} style={styles.commentRow}>
-                    <View style={styles.commentAvatar}>
-                      {comment.userAvatarUrl ? (
-                        <Image source={{ uri: comment.userAvatarUrl }} style={styles.commentAvatarImage} />
-                      ) : (
-                        <User color="#E65100" size={14} />
-                      )}
+                {comments.map((comment) => {
+                  const isOwnComment = comment.userId === currentUserId;
+                  const commentContent = (
+                    <View key={comment.id} style={styles.commentRow}>
+                      <View style={styles.commentAvatar}>
+                        {comment.userAvatarUrl ? (
+                          <Image source={{ uri: comment.userAvatarUrl }} style={styles.commentAvatarImage} />
+                        ) : (
+                          <User color="#E65100" size={14} />
+                        )}
+                      </View>
+                      <View style={styles.commentContent}>
+                        <Text style={styles.commentUsername}>{comment.username}</Text>
+                        <Text style={styles.commentText}>{comment.content}</Text>
+                        <Text style={styles.commentTime}>{formatTimeAgo(comment.createdAt)}</Text>
+                      </View>
                     </View>
-                    <View style={styles.commentContent}>
-                      <Text style={styles.commentUsername}>{comment.username}</Text>
-                      <Text style={styles.commentText}>{comment.content}</Text>
-                      <Text style={styles.commentTime}>{formatTimeAgo(comment.createdAt)}</Text>
-                    </View>
-                  </View>
-                ))}
+                  );
+
+                  if (isOwnComment) return commentContent;
+                  return (
+                    <TouchableOpacity
+                      key={comment.id}
+                      onLongPress={() => handleCommentMenu(comment)}
+                      activeOpacity={0.8}
+                    >
+                      {React.cloneElement(commentContent, { key: undefined })}
+                    </TouchableOpacity>
+                  );
+                })}
                 <View style={styles.commentInputRow}>
                   <TextInput
                     style={styles.commentInput}
@@ -859,6 +953,42 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
           post={sharePost}
         />
       )}
+
+      {/* Report Modal */}
+      <Modal
+        visible={reportModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => { setReportModalVisible(false); setReportTarget(null); }}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => { setReportModalVisible(false); setReportTarget(null); }}>
+              <X color="#666666" size={24} />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Report</Text>
+            <View style={{ width: 24 }} />
+          </View>
+          <View style={styles.modalContent}>
+            <Text style={styles.reportSubtitle}>
+              Why are you reporting this {reportTarget?.type || 'content'}?
+            </Text>
+            {(['spam', 'harassment', 'inappropriate', 'other'] as const).map((reason) => (
+              <TouchableOpacity
+                key={reason}
+                style={styles.reportReasonBtn}
+                onPress={() => handleSubmitReport(reason)}
+                activeOpacity={0.7}
+              >
+                <Flag color="#E65100" size={18} />
+                <Text style={styles.reportReasonText}>
+                  {reason.charAt(0).toUpperCase() + reason.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </SafeAreaView>
+      </Modal>
     </View>
   );
 }
@@ -1285,5 +1415,27 @@ const styles = StyleSheet.create({
   attachItemTextSelected: {
     color: '#E65100',
     fontWeight: '600',
+  },
+
+  // Report modal
+  reportSubtitle: {
+    fontSize: 16,
+    color: '#666666',
+    marginBottom: 24,
+  },
+  reportReasonBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  reportReasonText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#1A1A1A',
   },
 });

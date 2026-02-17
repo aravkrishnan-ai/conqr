@@ -140,6 +140,10 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
                         supabase.from('friendships').delete().or(`requester_id.eq.${userId},addressee_id.eq.${userId}`),
                         supabase.from('territories').delete().eq('owner_id', userId),
                         supabase.from('activities').delete().eq('user_id', userId),
+                        supabase.from('user_reports').delete().eq('reporter_id', userId),
+                        supabase.from('user_reports').delete().eq('reported_user_id', userId),
+                        supabase.from('user_blocks').delete().eq('blocker_id', userId),
+                        supabase.from('user_blocks').delete().eq('blocked_id', userId),
                       ]);
 
                       await supabase.from('users').delete().eq('id', userId);

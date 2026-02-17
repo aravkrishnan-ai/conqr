@@ -77,6 +77,43 @@ export const handleAuthCallbackUrl = async (url: string): Promise<boolean> => {
     return false;
 };
 
+export const signUpWithEmail = async (email: string, password: string) => {
+    const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+    });
+
+    if (error) {
+        console.error('Sign up error:', error);
+        Alert.alert('Sign Up Error', error.message || 'Failed to create account');
+        throw error;
+    }
+
+    if (data?.user && !data.session) {
+        Alert.alert(
+            'Check Your Email',
+            'We sent you a confirmation link. Please check your inbox and confirm your email to sign in.'
+        );
+    }
+
+    return data;
+};
+
+export const signInWithEmail = async (email: string, password: string) => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+    });
+
+    if (error) {
+        console.error('Sign in error:', error);
+        Alert.alert('Sign In Error', error.message || 'Failed to sign in');
+        throw error;
+    }
+
+    return data;
+};
+
 export const AuthService = {
     async getCurrentUser(): Promise<UserProfile | undefined> {
         // Check Supabase session first
