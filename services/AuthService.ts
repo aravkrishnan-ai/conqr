@@ -200,6 +200,13 @@ export const AuthService = {
         const userEmail = session.user.email;
         const avatarUrl = session.user.user_metadata?.avatar_url;
 
+        // Preserve existing createdAt if the user already has a local profile
+        let existingCreatedAt: number | undefined;
+        try {
+            const existingProfile = await db.users.get(userId);
+            existingCreatedAt = existingProfile?.createdAt;
+        } catch {}
+
         // Save locally FIRST (offline-first)
         const profile: UserProfile = {
             id: userId,
@@ -207,7 +214,7 @@ export const AuthService = {
             username: updates.username || '',
             bio: updates.bio || '',
             avatarUrl: updates.avatarUrl || avatarUrl,
-            createdAt: Date.now()
+            createdAt: existingCreatedAt || Date.now()
         };
         await db.users.put(profile);
 
@@ -235,11 +242,20 @@ export const AuthService = {
     },
 
     async getCurrentProfile(): Promise<UserProfile | null> {
-        // Check local DB FIRST (offline-first)
+        // Check local DB FIRST (offline-first), filtered by current session user
         try {
-            const users = await db.users.toArray();
-            if (users.length > 0 && users[0].username) {
-                return users[0];
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.user) {
+                const localUser = await db.users.get(session.user.id);
+                if (localUser?.username) {
+                    return localUser;
+                }
+            } else {
+                // No session — try local fallback
+                const users = await db.users.toArray();
+                if (users.length > 0 && users[0].username) {
+                    return users[0];
+                }
             }
         } catch (err) {
             console.log('Local DB error:', err);

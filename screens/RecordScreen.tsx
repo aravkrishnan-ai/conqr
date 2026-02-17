@@ -208,8 +208,25 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
     }
 
     if (isTracking) {
-      // Stop tracking — get final accumulated state from the store
+      // Check auth BEFORE stopping the tracker to avoid data loss
       setIsSaving(true);
+
+      let userId: string;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user?.id) {
+          Alert.alert('Sign In Required', 'Please sign in to save activities.');
+          setIsSaving(false);
+          return;
+        }
+        userId = session.user.id;
+      } catch {
+        Alert.alert('Error', 'Could not verify sign-in status. Please try again.');
+        setIsSaving(false);
+        return;
+      }
+
+      // Stop tracking — get final accumulated state from the store
       const trackingResult = TrackingStore.stop();
 
       const currentPath = trackingResult.path;
@@ -227,12 +244,6 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
       }, SLOW_SAVE_WARN_MS);
 
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const userId = session?.user?.id;
-        if (!userId) {
-          Alert.alert('Sign In Required', 'Please sign in to save activities.');
-          return;
-        }
         const activityId = uuidv4();
 
         const distance = ActivityService.calculateDistance(currentPath);
@@ -476,8 +487,8 @@ export default function RecordScreen({ navigation }: RecordScreenProps) {
                   distanceToStart <= 200 && styles.distanceToStartTextClose,
                 ]}>
                   {distanceToStart <= 200
-                    ? `${distanceToStart}m — close loop!`
-                    : `${distanceToStart}m from start`}
+                    ? `${Math.round(distanceToStart)}m — close loop!`
+                    : `${Math.round(distanceToStart)}m from start`}
                 </Text>
               </View>
             )}

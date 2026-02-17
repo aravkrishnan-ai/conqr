@@ -58,7 +58,7 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
   const [expandedComments, setExpandedComments] = useState<string | null>(null);
   const [comments, setComments] = useState<PostComment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
-  const [newComment, setNewComment] = useState('');
+  const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [sendingComment, setSendingComment] = useState(false);
 
   // Action loading
@@ -177,6 +177,7 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
     }
 
     setExpandedComments(postId);
+    setComments([]);
     setCommentsLoading(true);
     try {
       const postComments = await FeedService.getComments(postId);
@@ -189,14 +190,15 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
   };
 
   const handleAddComment = async (postId: string) => {
-    if (!newComment.trim()) return;
+    const commentText = commentInputs[postId]?.trim();
+    if (!commentText) return;
 
     setSendingComment(true);
     try {
-      const comment = await FeedService.addComment(postId, newComment.trim());
+      const comment = await FeedService.addComment(postId, commentText);
       AnalyticsService.trackEvent('comment_added', { postId });
       setComments(prev => [...prev, comment]);
-      setNewComment('');
+      setCommentInputs(prev => ({ ...prev, [postId]: '' }));
       setPosts(prev => prev.map(p =>
         p.id === postId ? { ...p, commentCount: p.commentCount + 1 } : p
       ));
@@ -668,14 +670,14 @@ export default function FeedScreen({ navigation }: FeedScreenProps) {
                     style={styles.commentInput}
                     placeholder="Write a comment..."
                     placeholderTextColor="#999999"
-                    value={newComment}
-                    onChangeText={setNewComment}
+                    value={commentInputs[item.id] || ''}
+                    onChangeText={(text) => setCommentInputs(prev => ({ ...prev, [item.id]: text }))}
                     maxLength={500}
                   />
                   <TouchableOpacity
-                    style={[styles.commentSendBtn, !newComment.trim() && styles.commentSendBtnDisabled]}
+                    style={[styles.commentSendBtn, !(commentInputs[item.id]?.trim()) && styles.commentSendBtnDisabled]}
                     onPress={() => handleAddComment(item.id)}
-                    disabled={!newComment.trim() || sendingComment}
+                    disabled={!(commentInputs[item.id]?.trim()) || sendingComment}
                   >
                     {sendingComment ? (
                       <ActivityIndicator size="small" color="#FFFFFF" />

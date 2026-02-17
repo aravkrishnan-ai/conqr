@@ -144,7 +144,6 @@ export default function ProfileScreen({ navigation }: ProfileScreenProps) {
 
                       await supabase.from('users').delete().eq('id', userId);
                       await supabase.auth.signOut();
-                      Alert.alert('Account Deleted', 'Your account and all data have been permanently deleted.');
                     } catch (err) {
                       console.error('Account deletion error:', err);
                       Alert.alert('Error', 'Failed to delete account. Please try again or contact support at conqrrunning@gmail.com');

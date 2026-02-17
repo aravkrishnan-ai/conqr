@@ -161,7 +161,10 @@ function AppNavigator() {
       });
     }, 10000);
 
-    init().then(() => clearTimeout(timeout));
+    init().then(() => clearTimeout(timeout)).catch((err) => {
+      console.error('App init error:', err);
+      clearTimeout(timeout);
+    });
 
 
     const linkingSub = Linking.addEventListener('url', async (event) => {
@@ -265,7 +268,6 @@ function AppNavigator() {
 }
 
 export default function App() {
-  console.log('APP STARTING');
 
   useEffect(() => {
     AnalyticsService.startSession();

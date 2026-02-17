@@ -196,9 +196,10 @@ export default function UserProfileScreen({ navigation, route }: UserProfileScre
             {profile.bio ? (
               <Text style={styles.bio}>{profile.bio}</Text>
             ) : null}
-            <Text style={styles.joinDate}>
-              <Calendar color="#999999" size={12} /> Joined {formatDate(profile.createdAt)}
-            </Text>
+            <View style={styles.joinDateRow}>
+              <Calendar color="#999999" size={12} />
+              <Text style={styles.joinDate}> Joined {formatDate(profile.createdAt)}</Text>
+            </View>
           </View>
 
           <View style={styles.statsSection}>
@@ -366,6 +367,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 8,
     paddingHorizontal: 20,
+  },
+  joinDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   joinDate: {
     fontSize: 12,

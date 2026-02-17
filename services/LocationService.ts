@@ -54,6 +54,7 @@ export const LocationService = {
     isStarting: false,
     startPromise: null as Promise<void> | null,
     backgroundStarted: false,
+    lastNotifiedTimestamp: 0,
 
     async startTracking(onLocation: LocationCallback, onError?: ErrorCallback): Promise<() => void> {
         const callbackEntry: TrackedCallback = { onLocation, onError };
@@ -210,12 +211,21 @@ export const LocationService = {
                     console.error('Error removing location subscription:', err);
                 }
                 this.subscription = null;
-                this.stopBackgroundTracking();
+                this.stopBackgroundTracking().catch(err => {
+                    console.error('Error stopping background tracking on unsubscribe:', err);
+                });
             }
         };
     },
 
     notifyListeners(point: GPSPoint) {
+        // Deduplicate: skip if this timestamp was already notified
+        // (prevents double delivery from foreground + background listeners)
+        if (point.timestamp && point.timestamp <= this.lastNotifiedTimestamp) {
+            return;
+        }
+        this.lastNotifiedTimestamp = point.timestamp || Date.now();
+
         // Create a copy of callbacks to avoid issues if callbacks modify the array
         const callbacksCopy = [...this.callbacks];
         for (const { onLocation } of callbacksCopy) {
@@ -253,8 +263,11 @@ export const LocationService = {
             }
             this.subscription = null;
         }
-        this.stopBackgroundTracking();
+        this.stopBackgroundTracking().catch(err => {
+            console.error('Error stopping background tracking:', err);
+        });
         this.lastKnownLocation = null;
+        this.lastNotifiedTimestamp = 0;
     },
 
     /**

@@ -213,9 +213,11 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
           const participants = await EventModeService.getEventParticipants(currentEvt.id);
           if (fetchId !== fetchGenRef.current) return;
           setEventParticipantCount(participants.length);
-          const eventTerritories = allTerritoriesRef.current.filter(t =>
-            t.claimedAt >= startTime && (participants.length === 0 || participants.includes(t.ownerId))
-          );
+          const eventTerritories = participants.length === 0
+            ? []
+            : allTerritoriesRef.current.filter(t =>
+                t.claimedAt >= startTime && participants.includes(t.ownerId)
+              );
           setEventLeaderboard(buildLeaderboardFromTerritories(eventTerritories));
         } else {
           setEventLeaderboard([]);
@@ -335,6 +337,7 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
   const handleExpandPastEvent = useCallback(async (event: EventInfo) => {
     if (expandedEventId === event.id) {
       setExpandedEventId(null);
+      setLoadingPastEvent(false);
       return;
     }
 
@@ -356,10 +359,12 @@ export default function LeaderboardScreen({ navigation }: LeaderboardScreenProps
       const startTime = new Date(event.startedAt).getTime();
       const endTime = event.endedAt ? new Date(event.endedAt).getTime() : Date.now();
       const participants = event.participants || [];
-      const eventTerritories = allTerritoriesRef.current.filter(
-        t => t.claimedAt >= startTime && t.claimedAt <= endTime &&
-          (participants.length === 0 || participants.includes(t.ownerId))
-      );
+      const eventTerritories = participants.length === 0
+        ? []
+        : allTerritoriesRef.current.filter(
+            t => t.claimedAt >= startTime && t.claimedAt <= endTime &&
+              participants.includes(t.ownerId)
+          );
       setPastEventLeaderboard(buildLeaderboardFromTerritories(eventTerritories));
     } catch (err) {
       console.error('Failed to load past event leaderboard:', err);

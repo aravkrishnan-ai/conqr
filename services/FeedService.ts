@@ -235,10 +235,14 @@ export const FeedService = {
     },
 
     async deletePost(postId: string): Promise<void> {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) throw new Error('Must be signed in');
+
         const { error } = await supabase
             .from('posts')
             .delete()
-            .eq('id', postId);
+            .eq('id', postId)
+            .eq('user_id', session.user.id);
 
         if (error) throw error;
     },
@@ -336,10 +340,14 @@ export const FeedService = {
     },
 
     async deleteComment(commentId: string): Promise<void> {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) throw new Error('Must be signed in');
+
         const { error } = await supabase
             .from('post_comments')
             .delete()
-            .eq('id', commentId);
+            .eq('id', commentId)
+            .eq('user_id', session.user.id);
 
         if (error) throw error;
     },

@@ -236,13 +236,18 @@ export const EventModeService = {
                 throw new Error('Event is full');
             }
 
-            // Store locally for fast check during territory claiming
-            await AsyncStorage.setItem(EVENT_JOINED_KEY, currentEvent.id);
-
-            // Write a dedicated row on the server (idempotent upsert, no race condition)
-            await supabase
+            // Write a dedicated row on the server first (idempotent upsert)
+            const { error: upsertError } = await supabase
                 .from('app_settings')
                 .upsert({ key: participantKey(currentEvent.id, userId), value: true });
+
+            if (upsertError) {
+                console.error('Failed to join event on server:', upsertError);
+                throw new Error('Failed to join event. Please try again.');
+            }
+
+            // Store locally only AFTER server write succeeds
+            await AsyncStorage.setItem(EVENT_JOINED_KEY, currentEvent.id);
 
             // Invalidate participant cache
             cachedParticipants = null;
@@ -299,7 +304,15 @@ export const EventModeService = {
     async isUserInEventMode(): Promise<boolean> {
         const eventMode = await this.getEventMode();
         if (!eventMode) return false;
-        return this.hasJoinedCurrentEvent();
+        const joined = await this.hasJoinedCurrentEvent();
+        if (!joined) return false;
+        // Also check if the event has expired
+        const currentEvent = await this.getCurrentEvent();
+        if (currentEvent) {
+            const timeRemaining = this.getEventTimeRemaining(currentEvent);
+            if (timeRemaining?.isExpired) return false;
+        }
+        return true;
     },
 
     // ── Event lifecycle ───────────────────────────────────────────────────
